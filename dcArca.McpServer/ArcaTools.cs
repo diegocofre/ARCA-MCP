@@ -87,7 +87,17 @@ public sealed class ArcaTools
         return _sequencer.EmitAsync(factura, cancellationToken);
     }
 
-    [McpServerTool, Description("Solicita a AFIP la autorización (CAE) de una factura. Los importes deben cumplir ImporteTotal = ImporteNeto + ImporteIva.")]
+    [McpServerTool, Description("Emite un comprobante usando el modelo fiscal completo de dcARCA (múltiples alícuotas, exentos/no gravados, tributos y moneda) y asigna la numeración server-side.")]
+    [Authorize(Policy = "ArcaFacturar")]
+    public Task<dcFacturaResponse> EmitirComprobanteAvanzado(
+        [Description("Modelo completo del comprobante. NumeroComprobante se ignora y es asignado por el servidor.")] dcFacturaRequest factura,
+        CancellationToken cancellationToken)
+    {
+        factura.NumeroComprobante = null;
+        return _sequencer.EmitAsync(factura, cancellationToken);
+    }
+
+    [McpServerTool, Description("Solicita a AFIP la autorización (CAE) de un comprobante con número elegido por el caller. Operación avanzada: el caller debe coordinar la numeración.")]
     [Authorize(Policy = "ArcaFacturar")]
     public Task<dcFacturaResponse> SolicitarCae(
         [Description("Tipo de comprobante AFIP a autorizar.")] dcTipoComprobante tipoComprobante,
@@ -98,7 +108,8 @@ public sealed class ArcaTools
         [Description("Condición frente al IVA del receptor (obligatoria por RG 5616).")] dcCondicionIvaReceptor condicionIvaReceptor,
         [Description("Importe neto gravado (sin IVA).")] decimal importeNeto,
         [Description("Importe de IVA.")] decimal importeIva,
-        [Description("Importe total (debe ser ImporteNeto + ImporteIva).")] decimal importeTotal,
+        [Description("Importe total fiscal del comprobante.")] decimal importeTotal,
+        [Description("Alícuota IVA para el caso simple de una sola alícuota. Obligatoria si importeIva > 0.")] dcAlicuotaIva? alicuotaIva,
         [Description("Fecha del comprobante en formato YYYYMMDD.")] string fechaComprobante,
         [Description("Fecha de servicio desde, formato YYYYMMDD. Obligatorio si concepto es Servicios o ProductosYServicios.")] string? fechaServicioDesde,
         [Description("Fecha de servicio hasta, formato YYYYMMDD. Obligatorio si concepto es Servicios o ProductosYServicios.")] string? fechaServicioHasta,
@@ -121,6 +132,7 @@ public sealed class ArcaTools
             ImporteNeto = importeNeto,
             ImporteIva = importeIva,
             ImporteTotal = importeTotal,
+            AlicuotaIva = alicuotaIva,
             FechaComprobante = fechaComprobante,
             FechaServicioDesde = fechaServicioDesde,
             FechaServicioHasta = fechaServicioHasta,
