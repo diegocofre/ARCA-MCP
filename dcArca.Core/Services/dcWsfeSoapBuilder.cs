@@ -116,25 +116,17 @@ public sealed class dcWsfeSoapBuilder
         sb.AppendLine($"                        <ar:CbteHasta>{nroComprobante}</ar:CbteHasta>");
         sb.AppendLine($"                        <ar:CbteFch>{SecurityElement.Escape(factura.FechaComprobante)}</ar:CbteFch>");
         sb.AppendLine($"                        <ar:ImpTotal>{factura.ImporteTotal.ToString("F2", CultureInfo.InvariantCulture)}</ar:ImpTotal>");
-        sb.AppendLine("                        <ar:ImpTotConc>0.00</ar:ImpTotConc>");
+        sb.AppendLine($"                        <ar:ImpTotConc>{factura.ImporteNoGravado.ToString("F2", CultureInfo.InvariantCulture)}</ar:ImpTotConc>");
         sb.AppendLine($"                        <ar:ImpNeto>{factura.ImporteNeto.ToString("F2", CultureInfo.InvariantCulture)}</ar:ImpNeto>");
-        sb.AppendLine("                        <ar:ImpOpEx>0.00</ar:ImpOpEx>");
-        sb.AppendLine("                        <ar:ImpTrib>0.00</ar:ImpTrib>");
+        sb.AppendLine($"                        <ar:ImpOpEx>{factura.ImporteExento.ToString("F2", CultureInfo.InvariantCulture)}</ar:ImpOpEx>");
+        sb.AppendLine($"                        <ar:ImpTrib>{factura.ImporteTributos.ToString("F2", CultureInfo.InvariantCulture)}</ar:ImpTrib>");
         sb.AppendLine($"                        <ar:ImpIVA>{factura.ImporteIva.ToString("F2", CultureInfo.InvariantCulture)}</ar:ImpIVA>");
         AppendServiceDates(sb, concepto, factura);
-        sb.AppendLine("                        <ar:MonId>PES</ar:MonId>");
-        sb.AppendLine("                        <ar:MonCotiz>1</ar:MonCotiz>");
+        sb.AppendLine($"                        <ar:MonId>{SecurityElement.Escape(factura.MonedaId)}</ar:MonId>");
+        sb.AppendLine($"                        <ar:MonCotiz>{factura.MonedaCotizacion.ToString("0.######", CultureInfo.InvariantCulture)}</ar:MonCotiz>");
         AppendCondicionIva(sb, factura);
-        if (factura.ImporteIva > 0)
-        {
-            sb.AppendLine("                        <ar:Iva>");
-            sb.AppendLine("                            <ar:AlicIva>");
-            sb.AppendLine("                                <ar:Id>5</ar:Id>");
-            sb.AppendLine($"                                <ar:BaseImp>{factura.ImporteNeto.ToString("F2", CultureInfo.InvariantCulture)}</ar:BaseImp>");
-            sb.AppendLine($"                                <ar:Importe>{factura.ImporteIva.ToString("F2", CultureInfo.InvariantCulture)}</ar:Importe>");
-            sb.AppendLine("                            </ar:AlicIva>");
-            sb.AppendLine("                        </ar:Iva>");
-        }
+        AppendTributos(sb, factura);
+        AppendIva(sb, factura);
         sb.AppendLine("                    </ar:FECAEDetRequest>");
         sb.AppendLine("                </ar:FeDetReq>");
         sb.AppendLine("            </ar:FeCAEReq>");
@@ -177,6 +169,47 @@ public sealed class dcWsfeSoapBuilder
                $"                <ar:Sign>{sign}</ar:Sign>\n" +
                $"                <ar:Cuit>{_config.Cuit}</ar:Cuit>\n" +
                "            </ar:Auth>\n";
+    }
+
+    private static void AppendTributos(StringBuilder sb, dcFacturaRequest factura)
+    {
+        if (factura.Tributos.Count == 0)
+        {
+            return;
+        }
+
+        sb.AppendLine("                        <ar:Tributos>");
+        foreach (var tributo in factura.Tributos)
+        {
+            sb.AppendLine("                            <ar:Tributo>");
+            sb.AppendLine($"                                <ar:Id>{tributo.Id}</ar:Id>");
+            sb.AppendLine($"                                <ar:Desc>{SecurityElement.Escape(tributo.Descripcion)}</ar:Desc>");
+            sb.AppendLine($"                                <ar:BaseImp>{tributo.BaseImponible.ToString("F2", CultureInfo.InvariantCulture)}</ar:BaseImp>");
+            sb.AppendLine($"                                <ar:Alic>{tributo.Alicuota.ToString("0.####", CultureInfo.InvariantCulture)}</ar:Alic>");
+            sb.AppendLine($"                                <ar:Importe>{tributo.Importe.ToString("F2", CultureInfo.InvariantCulture)}</ar:Importe>");
+            sb.AppendLine("                            </ar:Tributo>");
+        }
+        sb.AppendLine("                        </ar:Tributos>");
+    }
+
+    private static void AppendIva(StringBuilder sb, dcFacturaRequest factura)
+    {
+        var iva = dcFacturaFiscalValidator.GetEffectiveIva(factura);
+        if (iva.Count == 0)
+        {
+            return;
+        }
+
+        sb.AppendLine("                        <ar:Iva>");
+        foreach (var detalle in iva)
+        {
+            sb.AppendLine("                            <ar:AlicIva>");
+            sb.AppendLine($"                                <ar:Id>{(int)detalle.Alicuota}</ar:Id>");
+            sb.AppendLine($"                                <ar:BaseImp>{detalle.BaseImponible.ToString("F2", CultureInfo.InvariantCulture)}</ar:BaseImp>");
+            sb.AppendLine($"                                <ar:Importe>{detalle.Importe.ToString("F2", CultureInfo.InvariantCulture)}</ar:Importe>");
+            sb.AppendLine("                            </ar:AlicIva>");
+        }
+        sb.AppendLine("                        </ar:Iva>");
     }
 
     private static void AppendServiceDates(StringBuilder sb, int concepto, dcFacturaRequest factura)
