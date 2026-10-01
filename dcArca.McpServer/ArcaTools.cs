@@ -23,12 +23,14 @@ public sealed class ArcaTools
     }
 
     [McpServerTool, Description("Consulta el último número de comprobante autorizado por AFIP para un tipo de comprobante dado, en el punto de venta configurado.")]
+    [Authorize(Policy = "ArcaConsultar")]
     public Task<dcFacturaResponse> ConsultarUltimoComprobante(
         [Description("Tipo de comprobante AFIP (ej: 1=Factura A, 6=Factura B, 11=Factura C).")] dcTipoComprobante tipoComprobante,
         CancellationToken cancellationToken)
         => _wsfe.FECompUltimoAutorizadoAsync(tipoComprobante, cancellationToken);
 
     [McpServerTool, Description("Consulta los datos de un comprobante ya emitido/autorizado por AFIP.")]
+    [Authorize(Policy = "ArcaConsultar")]
     public Task<dcFacturaResponse> ConsultarComprobante(
         [Description("Número del comprobante a consultar.")] long numeroComprobante,
         [Description("Tipo de comprobante AFIP (ej: 1=Factura A, 6=Factura B, 11=Factura C).")] dcTipoComprobante tipoComprobante,
@@ -84,6 +86,7 @@ public sealed class ArcaTools
     }
 
     [McpServerTool, Description("Consulta las condiciones de IVA válidas para un receptor dado, según el tipo de comprobante a emitir.")]
+    [Authorize(Policy = "ArcaConsultar")]
     public Task<List<dcCondicionIvaOption>> ConsultarCondicionesIva(
         [Description("Tipo de documento del receptor.")] dcTipoDocumento docTipo,
         [Description("Número de documento del receptor.")] long docNro,
@@ -92,6 +95,7 @@ public sealed class ArcaTools
         => _wsfe.GetCondicionesIVAReceptorAsync((int)docTipo, docNro, tipoComprobante, cancellationToken);
 
     [McpServerTool, Description("Consulta los datos registrales de un CUIT en el padrón de AFIP (razón social, estado, actividades).")]
+    [Authorize(Policy = "ArcaConsultar")]
     public Task<dcPadronPersonaResult> ConsultarPadron(
         [Description("CUIT a consultar (sin guiones).")] long cuit,
         CancellationToken cancellationToken)
