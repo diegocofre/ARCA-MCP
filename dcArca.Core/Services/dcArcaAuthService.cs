@@ -12,7 +12,6 @@ using System.Globalization;
 using System.Net;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
-using System.Text.Json;
 using System.Xml;
 using dcArca.Core.Services.Logging;
 
@@ -28,10 +27,9 @@ public class dcArcaAuthService
     private readonly string _certificatePath;
     private readonly string _certificatePassword;
     private readonly string _cuit;
-    private readonly string _cachePath;
     private readonly string _serviceName;
     private readonly string _cacheKey;
-    private readonly dcWsaaFileCacheCoordinator _cacheCoordinator;
+    private readonly IWsaaTokenStore _tokenStore;
     private readonly IAfipLogger _logger;
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> _tokenLocks = new();
     private static readonly TimeSpan _renewalSkew = TimeSpan.FromMinutes(2);
@@ -42,7 +40,14 @@ public class dcArcaAuthService
     private string? _sign;
     private DateTime _tokenExpiration;
 
-    public dcArcaAuthService(string wsaaUrl, string certificatePath, string certificatePassword, string cuit, string serviceName = "wsfe", IAfipLogger? logger = null)
+    public dcArcaAuthService(
+        string wsaaUrl,
+        string certificatePath,
+        string certificatePassword,
+        string cuit,
+        string serviceName = "wsfe",
+        IAfipLogger? logger = null,
+        IWsaaTokenStore? tokenStore = null)
     {
         _wsaaUrl = wsaaUrl;
         _certificatePath = certificatePath;
@@ -52,14 +57,7 @@ public class dcArcaAuthService
         _tokenExpiration = DateTime.MinValue;
         _cacheKey = $"{_cuit}_{_serviceName}";
         _logger = logger ?? NoOpAfipLogger.Instance;
-
-        _cachePath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "dcArca",
-            $"wsaa_token_{_cuit}_{_serviceName}.json");
-        _cacheCoordinator = new dcWsaaFileCacheCoordinator(_cachePath);
-
-        LoadTokenFromCache();
+        _tokenStore = tokenStore ?? MemoryWsaaTokenStore.Shared;
     }
 
     /// <summary>
@@ -78,10 +76,10 @@ public class dcArcaAuthService
         await gate.WaitAsync(cancellationToken);
         try
         {
-            await using var processLock = await _cacheCoordinator.AcquireAsync(cancellationToken);
+            await using var storeLock = await _tokenStore.AcquireLockAsync(_cacheKey, cancellationToken);
 
             // Double-check tras adquirir ambos locks: otro hilo/proceso pudo refrescar y guardar.
-            LoadTokenFromCache();
+            await LoadTokenFromStoreAsync(cancellationToken);
             if (!string.IsNullOrEmpty(_token) && !string.IsNullOrEmpty(_sign) && DateTime.UtcNow < _tokenExpiration - _renewalSkew)
             {
                 _logger.LogInformation($"[dcAuthService] Token válido (post-lock) hasta {_tokenExpiration}");
@@ -107,8 +105,8 @@ public class dcArcaAuthService
         await gate.WaitAsync(cancellationToken);
         try
         {
-            await using var processLock = await _cacheCoordinator.AcquireAsync(cancellationToken);
-            LoadTokenFromCache();
+            await using var storeLock = await _tokenStore.AcquireLockAsync(_cacheKey, cancellationToken);
+            await LoadTokenFromStoreAsync(cancellationToken);
             if (!string.IsNullOrEmpty(_token) && _token != rejectedToken
                 && !string.IsNullOrEmpty(_sign) && DateTime.UtcNow < _tokenExpiration - _renewalSkew)
             {
@@ -118,11 +116,8 @@ public class dcArcaAuthService
             _token = null;
             _sign = null;
             _tokenExpiration = DateTime.MinValue;
-            if (File.Exists(_cachePath))
-            {
-                File.Delete(_cachePath);
-                _logger.LogInformation("[dcAuthService] Cache invalidado manualmente");
-            }
+            await _tokenStore.RemoveAsync(_cacheKey, cancellationToken);
+            _logger.LogInformation("[dcAuthService] Cache WSAA invalidado");
         }
         finally
         {
@@ -150,7 +145,7 @@ public class dcArcaAuthService
 
             // 4. Extraer token, sign y expiration
             ParseWsaaResponse(response);
-            SaveTokenCache();
+            await SaveTokenStoreAsync(cancellationToken);
             _logger.LogInformation($"[dcAuthService] Token obtenido. Válido hasta {_tokenExpiration}");
         }
         catch (Exception ex)
@@ -158,7 +153,7 @@ public class dcArcaAuthService
             if (ex.Message.Contains("coe.alreadyAuthenticated", StringComparison.OrdinalIgnoreCase))
             {
                 _logger.LogWarning("[dcAuthService] WSAA indica que ya existe un TA válido. Reutilizando cache si está disponible.");
-                LoadTokenFromCache();
+                await LoadTokenFromStoreAsync(cancellationToken);
                 if (!string.IsNullOrEmpty(_token) && DateTime.UtcNow < _tokenExpiration)
                 {
                     _logger.LogInformation($"[dcAuthService] Token en cache vigente hasta {_tokenExpiration}");
@@ -365,21 +360,19 @@ public class dcArcaAuthService
         }
     }
 
-    private void LoadTokenFromCache()
+    private async Task LoadTokenFromStoreAsync(CancellationToken cancellationToken)
     {
         try
         {
-            if (!File.Exists(_cachePath))
-                return;
-
-            var json = File.ReadAllText(_cachePath);
-            var cached = JsonSerializer.Deserialize<TokenCacheEntry>(json);
+            var cached = await _tokenStore.ReadAsync(_cacheKey, cancellationToken);
             if (cached == null)
+            {
                 return;
+            }
 
             if (DateTime.UtcNow >= cached.Expiration)
             {
-                File.Delete(_cachePath);
+                await _tokenStore.RemoveAsync(_cacheKey, cancellationToken);
                 return;
             }
 
@@ -394,22 +387,20 @@ public class dcArcaAuthService
         }
     }
 
-    private void SaveTokenCache()
+    private async Task SaveTokenStoreAsync(CancellationToken cancellationToken)
     {
         try
         {
             if (string.IsNullOrEmpty(_token) || string.IsNullOrEmpty(_sign))
-                return;
-
-            var entry = new TokenCacheEntry
             {
-                Token = _token!,
-                Sign = _sign!,
-                Expiration = _tokenExpiration
-            };
+                return;
+            }
 
-            var json = JsonSerializer.Serialize(entry);
-            _cacheCoordinator.WriteAllTextAtomic(json);
+            await _tokenStore.WriteAsync(
+                _cacheKey,
+                new WsaaTokenEntry(_token, _sign, _tokenExpiration),
+                cancellationToken);
+
             _logger.LogInformation($"[dcAuthService] Token cacheado hasta {_tokenExpiration}");
         }
         catch (Exception ex)
@@ -418,10 +409,4 @@ public class dcArcaAuthService
         }
     }
 
-    private sealed class TokenCacheEntry
-    {
-        public string Token { get; set; } = string.Empty;
-        public string Sign { get; set; } = string.Empty;
-        public DateTime Expiration { get; set; }
-    }
 }
