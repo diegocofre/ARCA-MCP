@@ -231,25 +231,12 @@ public class dcWsfeClient : IdcWsfeClient, IDisposable
                 }
             }
 
-            if (factura.ImporteNeto <= 0)
+            var fiscalValidation = dcFacturaFiscalValidator.Validate(factura);
+            if (!fiscalValidation.IsValid)
             {
-                return CrearRespuestaValidacion("IMP_NET_INVALID", "ImporteNeto debe ser mayor que 0.");
-            }
-
-            if (factura.ImporteIva < 0)
-            {
-                return CrearRespuestaValidacion("IMP_IVA_INVALID", "ImporteIva no puede ser negativo.");
-            }
-
-            if (factura.ImporteTotal <= 0)
-            {
-                return CrearRespuestaValidacion("IMP_TOTAL_INVALID", "ImporteTotal debe ser mayor que 0.");
-            }
-
-            var sumaImportes = factura.ImporteNeto + factura.ImporteIva;
-            if (Math.Abs(sumaImportes - factura.ImporteTotal) > 0.01m)
-            {
-                return CrearRespuestaValidacion("IMP_MISMATCH", "ImporteTotal debe ser la suma de ImporteNeto + ImporteIva (con tolerancia de 0.01).");
+                return CrearRespuestaValidacion(
+                    fiscalValidation.Code ?? "FISCAL_INVALID",
+                    fiscalValidation.Message ?? "El desglose fiscal del comprobante no es consistente.");
             }
 
             if (string.IsNullOrWhiteSpace(factura.FechaComprobante))
