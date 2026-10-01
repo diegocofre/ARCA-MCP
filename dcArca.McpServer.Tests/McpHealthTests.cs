@@ -47,20 +47,24 @@ public class McpHealthTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
-    public void TestingConAuthorityHttp_FallaAlArrancar()
+    public void AuthorityHttp_FueraDeDevelopment_EsRechazada()
     {
-        var invalid = _factory.WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureAppConfiguration((_, config) =>
-            {
-                config.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["Jwt:Authority"] = "http://insecure-authority.invalid"
-                });
-            });
-        });
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            McpConfigurationValidator.ValidateJwt(
+                "http://insecure-authority.invalid",
+                "dcarca-mcp",
+                isDevelopment: false));
 
-        var ex = Assert.ThrowsAny<Exception>(() => invalid.CreateClient());
-        Assert.Contains("HTTPS", ex.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("HTTPS", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void AuthorityHttp_EnDevelopment_EstaPermitida()
+    {
+        McpConfigurationValidator.ValidateJwt(
+            "http://localhost:8081/realms/dcarca",
+            "dcarca-mcp",
+            isDevelopment: true);
+    }
+
 }
