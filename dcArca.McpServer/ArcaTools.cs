@@ -15,11 +15,13 @@ public sealed class ArcaTools
 {
     private readonly IdcWsfeClient _wsfe;
     private readonly IdcPadronClient _padron;
+    private readonly McpInvoiceSequencer _sequencer;
 
-    public ArcaTools(IdcWsfeClient wsfe, IdcPadronClient padron)
+    public ArcaTools(IdcWsfeClient wsfe, IdcPadronClient padron, McpInvoiceSequencer sequencer)
     {
         _wsfe = wsfe;
         _padron = padron;
+        _sequencer = sequencer;
     }
 
     [McpServerTool, Description("Consulta el último número de comprobante autorizado por AFIP para un tipo de comprobante dado, en el punto de venta configurado.")]
@@ -36,6 +38,54 @@ public sealed class ArcaTools
         [Description("Tipo de comprobante AFIP (ej: 1=Factura A, 6=Factura B, 11=Factura C).")] dcTipoComprobante tipoComprobante,
         CancellationToken cancellationToken)
         => _wsfe.FECompConsultarAsync(numeroComprobante, tipoComprobante, cancellationToken);
+
+    [McpServerTool, Description("Emite un comprobante calculando el próximo número autorizado dentro del servidor. Es el flujo recomendado para emisión MCP.")]
+    [Authorize(Policy = "ArcaFacturar")]
+    public Task<dcFacturaResponse> EmitirComprobante(
+        [Description("Tipo de comprobante AFIP a autorizar.")] dcTipoComprobante tipoComprobante,
+        [Description("Concepto: 1=Productos, 2=Servicios, 3=Productos y Servicios.")] dcConcepto concepto,
+        [Description("Número de documento del receptor.")] long cuitReceptor,
+        [Description("Tipo de documento del receptor.")] dcTipoDocumento tipoDocReceptor,
+        [Description("Condición frente al IVA del receptor.")] dcCondicionIvaReceptor condicionIvaReceptor,
+        [Description("Importe neto gravado.")] decimal importeNeto,
+        [Description("Importe de IVA.")] decimal importeIva,
+        [Description("Importe total.")] decimal importeTotal,
+        [Description("Fecha del comprobante YYYYMMDD.")] string fechaComprobante,
+        [Description("Alícuota IVA para el caso simple de una sola alícuota. Obligatoria si importeIva > 0 y no se usa un detalle fiscal más avanzado.")] dcAlicuotaIva? alicuotaIva,
+        [Description("Fecha de servicio desde YYYYMMDD.")] string? fechaServicioDesde,
+        [Description("Fecha de servicio hasta YYYYMMDD.")] string? fechaServicioHasta,
+        [Description("Fecha de vencimiento YYYYMMDD.")] string? fechaVencimiento,
+        [Description("Tipo del comprobante asociado para notas.")] int? tipoComprobanteAsociado,
+        [Description("Punto de venta del comprobante asociado.")] int? puntoVentaAsociado,
+        [Description("Número del comprobante asociado.")] long? numeroAsociado,
+        [Description("Período asociado desde YYYYMMDD.")] string? periodoAsociadoDesde,
+        [Description("Período asociado hasta YYYYMMDD.")] string? periodoAsociadoHasta,
+        CancellationToken cancellationToken)
+    {
+        var factura = new dcFacturaRequest
+        {
+            TipoComprobante = tipoComprobante,
+            Concepto = concepto,
+            CuitReceptor = cuitReceptor,
+            TipoDocReceptor = (int)tipoDocReceptor,
+            CondicionIvaReceptor = condicionIvaReceptor,
+            ImporteNeto = importeNeto,
+            ImporteIva = importeIva,
+            ImporteTotal = importeTotal,
+            AlicuotaIva = alicuotaIva,
+            FechaComprobante = fechaComprobante,
+            FechaServicioDesde = fechaServicioDesde,
+            FechaServicioHasta = fechaServicioHasta,
+            FechaVencimiento = fechaVencimiento,
+            CbteAsociadoTipo = tipoComprobanteAsociado,
+            CbteAsociadoPtoVta = puntoVentaAsociado,
+            CbteAsociadoNro = numeroAsociado,
+            PeriodoAsocDesde = periodoAsociadoDesde,
+            PeriodoAsocHasta = periodoAsociadoHasta,
+        };
+
+        return _sequencer.EmitAsync(factura, cancellationToken);
+    }
 
     [McpServerTool, Description("Solicita a AFIP la autorización (CAE) de una factura. Los importes deben cumplir ImporteTotal = ImporteNeto + ImporteIva.")]
     [Authorize(Policy = "ArcaFacturar")]
