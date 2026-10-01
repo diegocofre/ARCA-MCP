@@ -16,6 +16,21 @@ var jwtAuthority = builder.Configuration["Jwt:Authority"]
 var jwtAudience = builder.Configuration["Jwt:Audience"]
     ?? throw new InvalidOperationException("Falta configurar Jwt:Audience en appsettings.json");
 
+if (!Uri.TryCreate(jwtAuthority, UriKind.Absolute, out var authorityUri))
+{
+    throw new InvalidOperationException("Jwt:Authority debe ser una URI absoluta.");
+}
+
+if (!builder.Environment.IsDevelopment() && authorityUri.Scheme != Uri.UriSchemeHttps)
+{
+    throw new InvalidOperationException("Jwt:Authority debe usar HTTPS fuera del ambiente Development.");
+}
+
+if (string.IsNullOrWhiteSpace(jwtAudience))
+{
+    throw new InvalidOperationException("Jwt:Audience no puede estar vacío.");
+}
+
 // dcArcaConfig se carga con el mismo helper que usa dcArca.TestApp, valida CUIT/certificado al arrancar.
 // appsettings.Development.json no trae su propia seccion dcArcaConfig (solo overrides de Logging), asi que
 // solo "Testing" (que sí trae dcArcaConfig con el certificado placeholder) se resuelve a un archivo distinto.
@@ -88,6 +103,9 @@ var app = builder.Build();
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.MapGet("/health/live", () => Results.Ok(new { status = "alive" }));
+app.MapGet("/health/ready", () => Results.Ok(new { status = "ready" }));
 
 app.MapMcp().RequireAuthorization();
 
