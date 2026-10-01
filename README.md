@@ -7,6 +7,10 @@ Esta librería NO ES un producto oficial de ARCA ni del Gobierno Argentino,sino 
 Este proyecto está licenciado bajo **Apache License 2.0**.  
 Copyright (c) 2025 Diego Cofré Sistemas www.diegocofre.com.ar
 
+## MCP Server
+
+Para instalar, configurar y consumir `dcArca.McpServer` con OAuth/OIDC, scopes, numeración segura, reconciliación y ejemplos de homologación, ver **[Documentación completa del MCP](docs/MCP_SERVER.md)**.
+
 ## � Quick Start (5 minutos)
 
 ### 1. Requisitos previos
