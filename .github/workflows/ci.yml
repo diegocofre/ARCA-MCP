@@ -35,6 +35,9 @@ jobs:
       - name: Build MCP tests
         run: dotnet build dcArca.McpServer.Tests/dcArca.McpServer.Tests.csproj --configuration Release --no-restore
 
+      - name: Build CLI
+        run: dotnet build dcArca.Cli/dcArca.Cli.csproj --configuration Release
+
       - name: Test Core
         run: dotnet test dcArca.Core.Tests/dcArca.Core.Tests.csproj --configuration Release --no-build
 
