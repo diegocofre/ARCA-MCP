@@ -266,6 +266,23 @@ public sealed class dcWsfeSoapParser
                     result.Iva.Add(detalle);
                 }
             }
+
+            result.Tributos.Clear();
+            var tributoNodes = resultGetNode.SelectNodes("ar:Tributos/ar:Tributo", nsmgr);
+            if (tributoNodes != null)
+            {
+                foreach (XmlNode tributo in tributoNodes)
+                {
+                    result.Tributos.Add(new dcFacturaResponse.TributoDetalle
+                    {
+                        Id = TryGetInt(tributo, nsmgr, "ar:Id"),
+                        Descripcion = tributo.SelectSingleNode("ar:Desc", nsmgr)?.InnerText ?? string.Empty,
+                        BaseImponible = TryGetDecimal(tributo, nsmgr, "ar:BaseImp") ?? 0m,
+                        Alicuota = TryGetDecimal(tributo, nsmgr, "ar:Alic") ?? 0m,
+                        Importe = TryGetDecimal(tributo, nsmgr, "ar:Importe") ?? 0m
+                    });
+                }
+            }
         }
         else
         {
