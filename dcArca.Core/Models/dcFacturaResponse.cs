@@ -175,14 +175,28 @@ public class dcFacturaResponse
     public dcCondicionIvaReceptor? CondicionIvaReceptor { get; set; }
 
     /// <summary>
-    /// Detalle de alícuotas de IVA
+    /// Detalle de alícuotas de IVA.
     /// </summary>
     public List<IvaDetalle> Iva { get; set; } = new();
+
+    /// <summary>
+    /// Detalle de tributos/percepciones devueltos por ARCA.
+    /// </summary>
+    public List<TributoDetalle> Tributos { get; set; } = new();
 
     public sealed class IvaDetalle
     {
         public dcAlicuotaIva? Alicuota { get; set; }
         public decimal BaseImponible { get; set; }
+        public decimal Importe { get; set; }
+    }
+
+    public sealed class TributoDetalle
+    {
+        public int? Id { get; set; }
+        public string Descripcion { get; set; } = string.Empty;
+        public decimal BaseImponible { get; set; }
+        public decimal Alicuota { get; set; }
         public decimal Importe { get; set; }
     }
 }
