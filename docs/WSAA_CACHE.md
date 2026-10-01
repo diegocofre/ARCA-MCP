@@ -1,20 +1,64 @@
-# Cache WSAA y concurrencia
+# Cache WSAA: seguridad y concurrencia
 
-El cache filesystem de WSAA se coordina por combinación CUIT + servicio.
+Los valores `token` y `sign` del Ticket de Acceso (TA) son credenciales sensibles mientras permanezcan vigentes. dcARCA no los registra en logs y, desde este diseño, tampoco los persiste en disco de forma implícita.
 
-## Concurrencia en un host
+## Comportamiento por defecto
 
-dcARCA usa dos niveles de sincronización:
+`dcArcaAuthService` usa `MemoryWsaaTokenStore.Shared` si el host no inyecta otro store.
 
-1. un `SemaphoreSlim` por clave para evitar renovaciones duplicadas dentro del mismo proceso;
-2. un lock de archivo exclusivo por cache para coordinar procesos distintos que comparten el mismo filesystem.
+Esto mantiene el TA reutilizable entre instancias del servicio dentro del mismo proceso, pero desaparece al finalizar el proceso. Es la opción más segura y no requiere configuración.
 
-Después de adquirir ambos locks, el servicio relee el cache antes de solicitar un TA nuevo. Si otro proceso ya renovó, reutiliza ese token.
+## Persistencia filesystem explícita
 
-La escritura se realiza en un archivo temporal del mismo directorio y luego se reemplaza el cache mediante rename/move, evitando publicar JSON parcialmente escrito.
+Si el host necesita compartir/reutilizar el TA entre procesos del mismo equipo, debe opt-in explícitamente:
+
+```csharp
+var tokenStore = new FileSystemWsaaTokenStore();
+
+var auth = new dcArcaAuthService(
+    config.WsaaUrl,
+    config.CertificatePath,
+    config.CertificatePassword,
+    config.Cuit,
+    tokenStore: tokenStore);
+```
+
+También puede indicarse un directorio dedicado:
+
+```csharp
+var tokenStore = new FileSystemWsaaTokenStore("/ruta/privada/dcarca-cache");
+```
+
+El store filesystem:
+
+- coordina procesos mediante lock exclusivo por CUIT + servicio;
+- relee el cache dentro de la sección crítica;
+- publica escrituras mediante temporal + rename/replace atómico;
+- intenta aplicar permisos `0700` al directorio y `0600` al archivo en Unix;
+- en Windows depende de las ACL del directorio configuradas por el host.
+
+No coloque este directorio dentro del repositorio, un volumen público o una ruta servida por HTTP.
+
+## Store protegido/cifrado del host
+
+`IWsaaTokenStore` permite implementar almacenamiento cifrado, secret managers, base de datos o coordinación distribuida sin modificar `dcArca.Core`.
+
+La librería no incluye una clave de cifrado propia: almacenar una clave junto al cache sólo trasladaría el mismo problema. Si el host cifra en reposo, la clave debe provenir de su infraestructura de secretos.
+
+Además de `ReadAsync`, `WriteAsync` y `RemoveAsync`, el contrato expone `AcquireLockAsync` para que un store remoto pueda implementar coordinación adecuada a su backend.
 
 ## Límite multi-host
 
-Este mecanismo no es un lock distribuido. Sólo coordina procesos que observan el mismo filesystem y cuyo sistema operativo respeta el lock exclusivo del archivo.
+`FileSystemWsaaTokenStore` sólo coordina procesos que observan el mismo filesystem y cuyo sistema operativo respeta el lock exclusivo del archivo. No es un lock distribuido.
 
-Si varias máquinas o réplicas independientes comparten un mismo CUIT/servicio, la coordinación debe quedar a cargo del host mediante un store/lock distribuido o, preferentemente, una estrategia que evite compartir la misma secuencia/credencial entre hosts.
+Si varias máquinas o réplicas independientes comparten un mismo CUIT/servicio, el host debe proveer un `IWsaaTokenStore` con coordinación distribuida o evitar compartir la misma credencial entre hosts.
+
+## Migración desde versiones anteriores
+
+Versiones anteriores de dcARCA escribían automáticamente un JSON bajo el directorio local de la aplicación. Ese comportamiento deja de ser implícito.
+
+- Si no necesita persistencia entre reinicios: no haga nada; se usará memoria.
+- Si necesita conservar el comportamiento anterior: inyecte `FileSystemWsaaTokenStore` explícitamente.
+- Si los tokens requieren protección adicional en reposo: implemente/injecte un `IWsaaTokenStore` protegido por el host.
+
+Los archivos de cache históricos pueden eliminarse una vez confirmado que ya no son necesarios.
