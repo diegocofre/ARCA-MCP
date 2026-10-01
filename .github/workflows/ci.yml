@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Restore Core tests
+        run: dotnet restore dcArca.Core.Tests/dcArca.Core.Tests.csproj
+
+      - name: Restore MCP tests
+        run: dotnet restore dcArca.McpServer.Tests/dcArca.McpServer.Tests.csproj
+
+      - name: Build Core tests
+        run: dotnet build dcArca.Core.Tests/dcArca.Core.Tests.csproj --configuration Release --no-restore
+
+      - name: Build MCP tests
+        run: dotnet build dcArca.McpServer.Tests/dcArca.McpServer.Tests.csproj --configuration Release --no-restore
+
+      - name: Test Core
+        run: dotnet test dcArca.Core.Tests/dcArca.Core.Tests.csproj --configuration Release --no-build
+
+      - name: Test MCP
+        run: dotnet test dcArca.McpServer.Tests/dcArca.McpServer.Tests.csproj --configuration Release --no-build
