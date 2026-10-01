@@ -23,6 +23,17 @@ jobs:
             8.0.x
             10.0.x
 
+      - name: Reject tracked certificate/private-key files
+        shell: bash
+        run: |
+          set -euo pipefail
+          sensitive="$(git ls-files | grep -Ei '\.(pfx|p12|p8|key|pem)$' || true)"
+          if [ -n "$sensitive" ]; then
+            echo "Sensitive key/certificate files must not be tracked:"
+            echo "$sensitive"
+            exit 1
+          fi
+
       - name: Restore Core tests
         run: dotnet restore dcArca.Core.Tests/dcArca.Core.Tests.csproj
 
@@ -37,6 +48,15 @@ jobs:
 
       - name: Build CLI
         run: dotnet build dcArca.Cli/dcArca.Cli.csproj --configuration Release
+
+      - name: Audit Core packages
+        run: dotnet list dcArca.Core/dcArca.Core.csproj package --vulnerable --include-transitive
+
+      - name: Audit MCP packages
+        run: dotnet list dcArca.McpServer/dcArca.McpServer.csproj package --vulnerable --include-transitive
+
+      - name: Audit CLI packages
+        run: dotnet list dcArca.Cli/dcArca.Cli.csproj package --vulnerable --include-transitive
 
       - name: Test Core
         run: dotnet test dcArca.Core.Tests/dcArca.Core.Tests.csproj --configuration Release --no-build
