@@ -357,39 +357,21 @@ La WinForms Test App incluye un formulario dedicado para consultar cualquier com
 - `EsNota()`: Indica si es nota de crédito/débito
 - `CumpleReglaNotas10197()`: Valida que notas tengan comprobante asociado
 
-## 🐳 Docker (servidores Linux)
+## 🖥️ CLI local (Linux/Windows/macOS)
 
-`dcArca.Service` es un ejecutable único que corre en Linux (a diferencia de `dcArca.TestApp`, que es WinForms y requiere Windows). Por defecto levanta una API REST; pasándole argumentos, corre un comando puntual y termina.
+`dcArca.Cli` conserva las operaciones de consola para administración y pruebas locales. No abre puertos ni expone una API HTTP.
 
-### Build
 ```bash
-docker build -f dcArca.Service/Dockerfile -t dcarca-service .
+cp dcArca.Cli/appsettings.example.json dcArca.Cli/appsettings.json
+dotnet run --project dcArca.Cli -- padron 20123456789
+dotnet run --project dcArca.Cli -- ultimo-autorizado 6
+dotnet run --project dcArca.Cli -- consultar 123 6
+dotnet run --project dcArca.Cli -- facturar factura.json
 ```
 
-### Modo API (por defecto)
-```bash
-docker run -d -p 8080:8080 \
-  -v /ruta/segura/certificado.pfx:/certs/certificado.pfx:ro \
-  -v /ruta/segura/appsettings.json:/app/appsettings.json:ro \
-  dcarca-service
-```
-Endpoints: `GET /health`, `POST /api/facturas`, `GET /api/facturas/ultimo-autorizado/{tipoComprobante}`, `GET /api/comprobantes/{numero}/{tipoComprobante}`, `GET /api/padron/{cuit}`, `GET /api/condiciones-iva?docTipo=&docNro=&tipoComprobante=`.
+Comandos disponibles: `facturar [archivo.json]`, `ultimo-autorizado <tipoComprobante>`, `consultar <numero> <tipoComprobante>`, `padron <cuit>` y `condiciones-iva <docTipo> <docNro> <tipoComprobante>`.
 
-### Modo CLI (comando puntual, mismo contenedor)
-```bash
-docker run --rm \
-  -v /ruta/segura/certificado.pfx:/certs/certificado.pfx:ro \
-  -v /ruta/segura/appsettings.json:/app/appsettings.json:ro \
-  dcarca-service padron 20123456789
-
-docker run --rm -i \
-  -v /ruta/segura/certificado.pfx:/certs/certificado.pfx:ro \
-  -v /ruta/segura/appsettings.json:/app/appsettings.json:ro \
-  dcarca-service facturar < factura.json
-```
-Comandos disponibles: `facturar [archivo.json]` (o JSON por stdin), `ultimo-autorizado <tipoComprobante>`, `consultar <numero> <tipoComprobante>`, `padron <cuit>`, `condiciones-iva <docTipo> <docNro> <tipoComprobante>`.
-
-La config se resuelve igual que en `appsettings.json` pero también acepta variables de entorno (`dcArcaConfig__Cuit`, `dcArcaConfig__CertificatePath`, etc.), útil para no montar un `appsettings.json` con secretos.
+Para acceso remoto autenticado use `dcArca.McpServer`. El proyecto público no incluye una API REST de facturación sin autenticación.
 
 ## 🐛 Troubleshooting
 
