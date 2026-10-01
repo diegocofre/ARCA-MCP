@@ -31,6 +31,7 @@ public class dcArcaAuthService
     private readonly string _cachePath;
     private readonly string _serviceName;
     private readonly string _cacheKey;
+    private readonly dcWsaaFileCacheCoordinator _cacheCoordinator;
     private readonly IAfipLogger _logger;
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> _tokenLocks = new();
     private static readonly TimeSpan _renewalSkew = TimeSpan.FromMinutes(2);
@@ -56,6 +57,7 @@ public class dcArcaAuthService
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "dcArca",
             $"wsaa_token_{_cuit}_{_serviceName}.json");
+        _cacheCoordinator = new dcWsaaFileCacheCoordinator(_cachePath);
 
         LoadTokenFromCache();
     }
@@ -76,7 +78,9 @@ public class dcArcaAuthService
         await gate.WaitAsync(cancellationToken);
         try
         {
-            // Double-check tras adquirir el lock (otro hilo/proceso pudo refrescar y guardarlo en disco)
+            await using var processLock = await _cacheCoordinator.AcquireAsync(cancellationToken);
+
+            // Double-check tras adquirir ambos locks: otro hilo/proceso pudo refrescar y guardar.
             LoadTokenFromCache();
             if (!string.IsNullOrEmpty(_token) && !string.IsNullOrEmpty(_sign) && DateTime.UtcNow < _tokenExpiration - _renewalSkew)
             {
@@ -103,6 +107,7 @@ public class dcArcaAuthService
         await gate.WaitAsync(cancellationToken);
         try
         {
+            await using var processLock = await _cacheCoordinator.AcquireAsync(cancellationToken);
             LoadTokenFromCache();
             if (!string.IsNullOrEmpty(_token) && _token != rejectedToken
                 && !string.IsNullOrEmpty(_sign) && DateTime.UtcNow < _tokenExpiration - _renewalSkew)
@@ -396,10 +401,6 @@ public class dcArcaAuthService
             if (string.IsNullOrEmpty(_token) || string.IsNullOrEmpty(_sign))
                 return;
 
-            var directory = Path.GetDirectoryName(_cachePath);
-            if (!string.IsNullOrEmpty(directory))
-                Directory.CreateDirectory(directory);
-
             var entry = new TokenCacheEntry
             {
                 Token = _token!,
@@ -408,7 +409,7 @@ public class dcArcaAuthService
             };
 
             var json = JsonSerializer.Serialize(entry);
-            File.WriteAllText(_cachePath, json);
+            _cacheCoordinator.WriteAllTextAtomic(json);
             _logger.LogInformation($"[dcAuthService] Token cacheado hasta {_tokenExpiration}");
         }
         catch (Exception ex)
