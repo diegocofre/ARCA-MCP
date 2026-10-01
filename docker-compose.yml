@@ -3,30 +3,17 @@ services:
     build:
       context: .
       dockerfile: dcArca.McpServer/Dockerfile
-    image: dcarca-mcpserver:latest
-    container_name: dcarca-mcpserver
+    image: dcarca-mcpserver:local
     restart: unless-stopped
-    networks:
-      - red-consultora
-    expose:
-      - "8080"
+    ports:
+      - "${MCP_PORT:-8080}:8080"
     volumes:
-      - ${APPSETTINGS_PATH}:/app/appsettings.json:ro
+      - ${APPSETTINGS_PATH:-./dcArca.McpServer/appsettings.json}:/app/appsettings.json:ro
       - ${CERTIFICATE_PATH}:/certs/certificado.pfx:ro
     environment:
-      - Jwt__Authority=${JWT_AUTHORITY}
-      - Jwt__Audience=${JWT_AUDIENCE}
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=red-consultora"
+      Jwt__Authority: ${JWT_AUTHORITY}
+      Jwt__Audience: ${JWT_AUDIENCE}
 
-      # HTTPS router
-      - "traefik.http.routers.dcarca-mcpserver.rule=Host(`${DOMAIN}`)"
-      - "traefik.http.routers.dcarca-mcpserver.entrypoints=websecure"
-      - "traefik.http.routers.dcarca-mcpserver.tls=true"
-      - "traefik.http.routers.dcarca-mcpserver.tls.certresolver=${CERT_RESOLVER:-letsencrypt}"
-      - "traefik.http.services.dcarca-mcpserver.loadbalancer.server.port=8080"
-
-networks:
-  red-consultora:
-    external: true
+# Este compose es deliberadamente genérico: no configura proxy reverso, TLS,
+# redes privadas ni infraestructura de producción. El host debe aportar
+# certificados, secretos y controles de red mediante variables/volúmenes.
