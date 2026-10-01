@@ -284,6 +284,10 @@ public class dcWsfeClient : IdcWsfeClient, IDisposable
                 var response = await SendSoapRequestAsync(soapRequest, "http://ar.gov.afip.dif.FEV1/FECAESolicitar", cancellationToken);
                 var result = _soapParser.ParseFECAESolicitarResponse(response, nroComprobante);
 
+                result.EmissionOutcome = result.Success
+                    ? dcEmissionOutcome.Authorized
+                    : dcEmissionOutcome.FiscalRejected;
+
                 if (result.Success)
                 {
                     _logger.LogInformation($"[dcWsfeClient] CAE obtenido exitosamente: {result.Cae}");
@@ -295,6 +299,16 @@ public class dcWsfeClient : IdcWsfeClient, IDisposable
 
                 return result;
             }
+            catch (HttpRequestException transportEx)
+            {
+                return await ReconcileAmbiguousEmissionAsync(
+                    transportEx, nroComprobante, tipoComprobanteEnum, cancellationToken);
+            }
+            catch (TaskCanceledException transportEx) when (!cancellationToken.IsCancellationRequested)
+            {
+                return await ReconcileAmbiguousEmissionAsync(
+                    transportEx, nroComprobante, tipoComprobanteEnum, CancellationToken.None);
+            }
             catch (dcTokenInvalidException)
             {
                 _logger.LogWarning("[dcWsfeClient] Token inválido detectado, refrescando...");
@@ -305,8 +319,21 @@ public class dcWsfeClient : IdcWsfeClient, IDisposable
                     var soapRequest = _soapBuilder.BuildSolicitarCaeRequest(newToken.token, newToken.sign, factura, nroComprobante, tipoComprobante, concepto);
                     var response = await SendSoapRequestAsync(soapRequest, "http://ar.gov.afip.dif.FEV1/FECAESolicitar", cancellationToken);
                     var result = _soapParser.ParseFECAESolicitarResponse(response, nroComprobante);
+                    result.EmissionOutcome = result.Success
+                        ? dcEmissionOutcome.Authorized
+                        : dcEmissionOutcome.FiscalRejected;
                     _logger.LogInformation($"[dcWsfeClient] Reintento exitoso para solicitud de CAE");
                     return result;
+                }
+                catch (HttpRequestException transportEx)
+                {
+                    return await ReconcileAmbiguousEmissionAsync(
+                        transportEx, nroComprobante, tipoComprobanteEnum, cancellationToken);
+                }
+                catch (TaskCanceledException transportEx) when (!cancellationToken.IsCancellationRequested)
+                {
+                    return await ReconcileAmbiguousEmissionAsync(
+                        transportEx, nroComprobante, tipoComprobanteEnum, CancellationToken.None);
                 }
                 catch (Exception retryEx)
                 {
@@ -324,6 +351,58 @@ public class dcWsfeClient : IdcWsfeClient, IDisposable
         {
             _logger.LogError($"[dcWsfeClient] Excepción en FECAESolicitar: {ex.Message}", ex);
             return CrearRespuestaValidacion("FECAESOLICITAR_ERROR", $"Error al solicitar CAE: {ex.Message}");
+        }
+    }
+
+    private async Task<dcFacturaResponse> ReconcileAmbiguousEmissionAsync(
+        Exception transportException,
+        long numeroComprobante,
+        dcTipoComprobante tipoComprobante,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogWarning(
+            $"[dcWsfeClient] Resultado de emisión incierto por error de transporte. Reconciliando comprobante {numeroComprobante} tipo {(int)tipoComprobante} antes de cualquier reintento.");
+
+        try
+        {
+            var reconciliation = await FECompConsultarAsync(
+                numeroComprobante,
+                tipoComprobante,
+                cancellationToken);
+
+            if (reconciliation.Success)
+            {
+                reconciliation.Success = true;
+                reconciliation.EmissionOutcome = dcEmissionOutcome.RecoveredSuccess;
+                reconciliation.Codigo = "FECAE_RECOVERED";
+                reconciliation.Mensaje = "Emisión autorizada por ARCA; resultado recuperado mediante FECompConsultar tras un error de transporte.";
+                _logger.LogInformation(
+                    $"[dcWsfeClient] Emisión recuperada por reconciliación. Comprobante {numeroComprobante}, CAE {reconciliation.Cae}.");
+                return reconciliation;
+            }
+
+            var uncertain = CrearRespuestaValidacion(
+                "FECAE_OUTCOME_UNCERTAIN",
+                "El resultado de la emisión es incierto. ARCA no pudo confirmar el comprobante durante la reconciliación; no se realizó un reintento automático.");
+            uncertain.NumeroComprobante = numeroComprobante;
+            uncertain.EmissionOutcome = dcEmissionOutcome.Uncertain;
+            uncertain.Errores.Add($"Error de transporte original: {transportException.Message}");
+            if (!string.IsNullOrWhiteSpace(reconciliation.Mensaje))
+            {
+                uncertain.Errores.Add($"Reconciliación: {reconciliation.Mensaje}");
+            }
+            return uncertain;
+        }
+        catch (Exception reconciliationEx)
+        {
+            var uncertain = CrearRespuestaValidacion(
+                "FECAE_OUTCOME_UNCERTAIN",
+                "El resultado de la emisión es incierto y la consulta de reconciliación también falló; no se realizó un reintento automático.");
+            uncertain.NumeroComprobante = numeroComprobante;
+            uncertain.EmissionOutcome = dcEmissionOutcome.Uncertain;
+            uncertain.Errores.Add($"Error de transporte original: {transportException.Message}");
+            uncertain.Errores.Add($"Error de reconciliación: {reconciliationEx.Message}");
+            return uncertain;
         }
     }
 
