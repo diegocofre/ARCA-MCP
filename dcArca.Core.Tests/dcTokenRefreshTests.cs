@@ -1,9 +1,8 @@
+using dcArca.Core.Models;
 using dcArca.Core.Services;
 using dcArca.Core.Services.Logging;
-using dcArca.Core.Models;
 using System.Net;
 using System.Text;
-using System.Text.Json;
 using Xunit;
 
 namespace dcArca.Core.Tests;
@@ -31,8 +30,11 @@ public class dcTokenRefreshTests
     public async Task WsfeReintentaCuandoFaultLlegaConHttp500()
     {
         var cuit = $"20{Random.Shared.NextInt64(100000000, 999999999):D9}";
-        var cachePath = CachePath(cuit);
-        WriteCache(cachePath, "rechazado");
+        var directory = TempDirectory();
+        var store = new FileSystemWsaaTokenStore(directory);
+        var key = $"{cuit}_wsfe";
+        await store.WriteAsync(key, Entry("rechazado"));
+
         try
         {
             var config = new dcArcaConfig
@@ -43,7 +45,8 @@ public class dcTokenRefreshTests
                 WsfeUrl = "https://example.test/wsfe",
                 PuntoVenta = 1
             };
-            var auth = new dcArcaAuthService(config.WsaaUrl, config.CertificatePath, "", cuit);
+            var auth = new dcArcaAuthService(
+                config.WsaaUrl, config.CertificatePath, "", cuit, tokenStore: store);
             using var http = new HttpClient(new FaultHandler());
             using var client = new dcWsfeClient(config, auth, http);
 
@@ -53,7 +56,7 @@ public class dcTokenRefreshTests
         }
         finally
         {
-            File.Delete(cachePath);
+            Directory.Delete(directory, recursive: true);
         }
     }
 
@@ -61,38 +64,33 @@ public class dcTokenRefreshTests
     public async Task InvalidacionTardiaNoBorraTokenRenovado()
     {
         var cuit = $"20{Random.Shared.NextInt64(100000000, 999999999):D9}";
-        var cachePath = CachePath(cuit);
-        WriteCache(cachePath, "rechazado");
+        var directory = TempDirectory();
+        var store = new FileSystemWsaaTokenStore(directory);
+        var key = $"{cuit}_wsfe";
+        await store.WriteAsync(key, Entry("rechazado"));
+
         try
         {
-            var auth = new dcArcaAuthService("https://example.test/wsaa", "certificado-inexistente.pfx", "", cuit);
-            WriteCache(cachePath, "renovado");
+            var auth = new dcArcaAuthService(
+                "https://example.test/wsaa", "certificado-inexistente.pfx", "", cuit, tokenStore: store);
 
+            await store.WriteAsync(key, Entry("renovado"));
             await auth.InvalidateCacheAsync("rechazado");
 
-            Assert.True(File.Exists(cachePath));
+            Assert.NotNull(await store.ReadAsync(key));
             Assert.Equal("renovado", (await auth.GetTokenAsync()).token);
         }
         finally
         {
-            File.Delete(cachePath);
+            Directory.Delete(directory, recursive: true);
         }
     }
 
-    private static string CachePath(string cuit) => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "dcArca", $"wsaa_token_{cuit}_wsfe.json");
+    private static WsaaTokenEntry Entry(string token)
+        => new(token, "firma", DateTime.UtcNow.AddHours(1));
 
-    private static void WriteCache(string path, string token)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, JsonSerializer.Serialize(new
-        {
-            Token = token,
-            Sign = "firma",
-            Expiration = DateTime.UtcNow.AddHours(1)
-        }));
-    }
+    private static string TempDirectory()
+        => Path.Combine(Path.GetTempPath(), "dcArca-tests", Guid.NewGuid().ToString("N"));
 
     private sealed class FaultHandler : HttpMessageHandler
     {
