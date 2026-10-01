@@ -45,9 +45,14 @@ public class dcFacturaResponse
     public string Mensaje { get; set; } = string.Empty;
 
     /// <summary>
-    /// Código identificador del resultado o error
+    /// Código identificador del resultado o error.
     /// </summary>
     public string? Codigo { get; set; }
+
+    /// <summary>
+    /// Estado semántico de una operación de emisión. En consultas puede permanecer en None.
+    /// </summary>
+    public dcEmissionOutcome EmissionOutcome { get; set; } = dcEmissionOutcome.None;
 
     /// <summary>
     /// Concepto informado (1=Productos, 2=Servicios, 3=Ambos)
