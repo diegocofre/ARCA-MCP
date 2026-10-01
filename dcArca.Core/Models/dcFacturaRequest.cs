@@ -60,9 +60,51 @@ public class dcFacturaRequest
     public decimal ImporteIva { get; set; }
 
     /// <summary>
-    /// Importe total de la factura
+    /// Importe total de la factura.
+    /// Debe coincidir con neto + no gravado + exento + IVA + tributos.
     /// </summary>
     public decimal ImporteTotal { get; set; }
+
+    /// <summary>
+    /// Importe no gravado / conceptos que no integran el neto gravado.
+    /// </summary>
+    public decimal ImporteNoGravado { get; set; }
+
+    /// <summary>
+    /// Importe exento de IVA.
+    /// </summary>
+    public decimal ImporteExento { get; set; }
+
+    /// <summary>
+    /// Alícuota explícita para el caso simple de una sola línea de IVA.
+    /// Si se usa <see cref="Iva"/>, debe dejarse en null.
+    /// </summary>
+    public dcAlicuotaIva? AlicuotaIva { get; set; }
+
+    /// <summary>
+    /// Detalle explícito de IVA. Permite cero, una o múltiples alícuotas.
+    /// </summary>
+    public List<IvaDetalle> Iva { get; set; } = new();
+
+    /// <summary>
+    /// Tributos/percepciones informados en la operación.
+    /// </summary>
+    public List<TributoDetalle> Tributos { get; set; } = new();
+
+    /// <summary>
+    /// Total de tributos derivado del detalle.
+    /// </summary>
+    public decimal ImporteTributos => Tributos.Sum(t => t.Importe);
+
+    /// <summary>
+    /// Código de moneda WSFE. PES por defecto por compatibilidad.
+    /// </summary>
+    public string MonedaId { get; set; } = "PES";
+
+    /// <summary>
+    /// Cotización de la moneda. 1 por defecto para PES.
+    /// </summary>
+    public decimal MonedaCotizacion { get; set; } = 1m;
 
     /// <summary>
     /// Fecha del comprobante (formato YYYYMMDD)
@@ -152,5 +194,21 @@ public class dcFacturaRequest
         bool tieneCbte = CbteAsociadoTipo.HasValue && CbteAsociadoPtoVta.HasValue && CbteAsociadoNro.HasValue;
         bool tienePeriodo = !string.IsNullOrWhiteSpace(PeriodoAsocDesde) && !string.IsNullOrWhiteSpace(PeriodoAsocHasta);
         return tieneCbte || tienePeriodo;
+    }
+
+    public sealed class IvaDetalle
+    {
+        public dcAlicuotaIva Alicuota { get; set; }
+        public decimal BaseImponible { get; set; }
+        public decimal Importe { get; set; }
+    }
+
+    public sealed class TributoDetalle
+    {
+        public int Id { get; set; }
+        public string Descripcion { get; set; } = string.Empty;
+        public decimal BaseImponible { get; set; }
+        public decimal Alicuota { get; set; }
+        public decimal Importe { get; set; }
     }
 }
