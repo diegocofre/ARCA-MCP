@@ -33,6 +33,7 @@ builder.Services.AddSingleton<dcArcaAuthService>(sp => new dcArcaAuthService(
     logger: sp.GetRequiredService<IAfipLogger>()));
 builder.Services.AddSingleton<IdcWsfeClient, dcWsfeClient>();
 builder.Services.AddSingleton<IdcPadronClient, dcPadronClient>();
+builder.Services.AddSingleton<McpInvoiceSequencer>();
 
 builder.Services.AddAuthentication(options =>
 {
