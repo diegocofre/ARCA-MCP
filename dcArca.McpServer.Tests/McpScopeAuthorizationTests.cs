@@ -99,8 +99,7 @@ public class McpScopeAuthorizationTests : IClassFixture<WebApplicationFactory<Pr
 
         Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
         Assert.DoesNotContain("\"name\":\"solicitar_cae\"", body);
-        // Los tools de solo lectura no tienen [Authorize] propio (dependen del RequireAuthorization()
-        // general de MapMcp, que ya exige "autenticado"), así que deben seguir apareciendo.
+        // Los tools de lectura requieren explícitamente arca:consultar.
         Assert.Contains("\"name\":\"consultar_padron\"", body);
         Assert.Contains("\"name\":\"consultar_comprobante\"", body);
         Assert.Contains("\"name\":\"consultar_ultimo_comprobante\"", body);
@@ -108,7 +107,7 @@ public class McpScopeAuthorizationTests : IClassFixture<WebApplicationFactory<Pr
     }
 
     [Fact]
-    public async Task ToolsList_ConScopeFacturar_IncluyeSolicitarCae()
+    public async Task ToolsList_ConScopeFacturar_IncluyeSoloEmision()
     {
         var client = _factory.CreateClient();
 
@@ -117,6 +116,26 @@ public class McpScopeAuthorizationTests : IClassFixture<WebApplicationFactory<Pr
 
         Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
         Assert.Contains("\"name\":\"solicitar_cae\"", body);
+        Assert.DoesNotContain("\"name\":\"consultar_padron\"", body);
+        Assert.DoesNotContain("\"name\":\"consultar_comprobante\"", body);
+        Assert.DoesNotContain("\"name\":\"consultar_ultimo_comprobante\"", body);
+        Assert.DoesNotContain("\"name\":\"consultar_condiciones_iva\"", body);
+    }
+
+    [Fact]
+    public async Task ToolsList_ConScopesCombinados_IncluyeLecturaYEmision()
+    {
+        var client = _factory.CreateClient();
+
+        var response = await client.SendAsync(BuildJsonRpcRequest("arca:consultar arca:facturar", "tools/list"));
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("\"name\":\"solicitar_cae\"", body);
+        Assert.Contains("\"name\":\"consultar_padron\"", body);
+        Assert.Contains("\"name\":\"consultar_comprobante\"", body);
+        Assert.Contains("\"name\":\"consultar_ultimo_comprobante\"", body);
+        Assert.Contains("\"name\":\"consultar_condiciones_iva\"", body);
     }
 
     [Fact]
@@ -146,6 +165,23 @@ public class McpScopeAuthorizationTests : IClassFixture<WebApplicationFactory<Pr
         // AddAuthorizationFilters() intercepta la llamada antes de ejecutar el tool y devuelve
         // un error JSON-RPC explícito (HTTP 200, la falla vive en el envelope JSON-RPC) cuando
         // el [Authorize(Policy = "ArcaFacturar")] del método no se cumple.
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("Access forbidden", body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("-32600", body);
+    }
+
+    [Fact]
+    public async Task ToolsCall_ConsultarPadron_ConScopeSoloFacturar_EsRechazado()
+    {
+        var client = _factory.CreateClient();
+
+        var response = await client.SendAsync(BuildJsonRpcRequest("arca:facturar", "tools/call", new
+        {
+            name = "consultar_padron",
+            arguments = new { cuit = 20123456786L }
+        }));
+        var body = await response.Content.ReadAsStringAsync();
+
         Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
         Assert.Contains("Access forbidden", body, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("-32600", body);
