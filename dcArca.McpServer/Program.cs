@@ -66,12 +66,10 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization(options =>
 {
-    // El claim "scope" de un JWT suele llegar como un único string separado por
-    // espacios (RFC no fija esto, pero es la convención de facto en Auth0/Entra/
-    // Keycloak), así que no alcanza con RequireClaim (compara el valor completo).
+    options.AddPolicy("ArcaConsultar", policy => policy.RequireAssertion(context =>
+        ArcaScopeAuthorization.HasScope(context.User, "arca:consultar")));
     options.AddPolicy("ArcaFacturar", policy => policy.RequireAssertion(context =>
-        context.User.FindAll("scope").Any(claim =>
-            claim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains("arca:facturar"))));
+        ArcaScopeAuthorization.HasScope(context.User, "arca:facturar")));
 });
 
 builder.Services.AddMcpServer()
