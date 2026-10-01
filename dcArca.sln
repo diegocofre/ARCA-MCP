@@ -9,7 +9,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "dcArca.TestApp", "dcArca.Te
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "dcArca.Core.Tests", "dcArca.Core.Tests\dcArca.Core.Tests.csproj", "{3B8ACB7C-6181-4F55-A343-61DDCF0CEF91}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "dcArca.Service", "dcArca.Service\dcArca.Service.csproj", "{FECE2D97-99C2-46C5-BF4E-86D206583A10}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "dcArca.Cli", "dcArca.Cli\dcArca.Cli.csproj", "{FECE2D97-99C2-46C5-BF4E-86D206583A10}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "dcArca.McpServer", "dcArca.McpServer\dcArca.McpServer.csproj", "{2ACD606C-E616-48D0-904D-BB4A62867C53}"
 EndProject
