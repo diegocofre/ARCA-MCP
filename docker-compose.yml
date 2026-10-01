@@ -13,6 +13,12 @@ services:
     environment:
       Jwt__Authority: ${JWT_AUTHORITY}
       Jwt__Audience: ${JWT_AUDIENCE}
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8080/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 # Este compose es deliberadamente genérico: no configura proxy reverso, TLS,
 # redes privadas ni infraestructura de producción. El host debe aportar
