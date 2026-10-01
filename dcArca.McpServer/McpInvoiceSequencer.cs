@@ -4,19 +4,19 @@ using dcArca.Core.Services;
 
 namespace dcArca.McpServer;
 
-internal sealed class McpInvoiceSequencer
+public sealed class McpInvoiceSequencer
 {
     private readonly IdcWsfeClient _wsfe;
     private readonly dcArcaConfig _config;
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> Locks = new();
 
-    internal McpInvoiceSequencer(IdcWsfeClient wsfe, dcArcaConfig config)
+    public McpInvoiceSequencer(IdcWsfeClient wsfe, dcArcaConfig config)
     {
         _wsfe = wsfe;
         _config = config;
     }
 
-    internal async Task<dcFacturaResponse> EmitAsync(
+    public async Task<dcFacturaResponse> EmitAsync(
         dcFacturaRequest factura,
         CancellationToken cancellationToken = default)
     {
