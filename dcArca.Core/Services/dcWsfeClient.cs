@@ -261,14 +261,12 @@ public class dcWsfeClient : IdcWsfeClient, IDisposable
                 return CrearRespuestaValidacion("FCHCBTE_INVALID", "FechaComprobante no tiene el formato válido YYYYMMDD.");
             }
 
-            if (factura.TipoDocReceptor <= 0)
+            var documentoValidation = dcDocumentoReceptorValidator.Validate(factura.TipoDocReceptor, factura.CuitReceptor);
+            if (!documentoValidation.IsValid)
             {
-                return CrearRespuestaValidacion("TDOC_INVALID", "TipoDocReceptor debe ser un valor válido (p. ej. 80 = CUIT).");
-            }
-
-            if (factura.TipoDocReceptor != 99 && !factura.ValidarCuit())
-            {
-                return CrearRespuestaValidacion("CUIT_INVALID", "El CUIT del receptor no tiene un formato válido o dígito verificador incorrecto.");
+                return CrearRespuestaValidacion(
+                    documentoValidation.Code ?? "DOC_INVALID",
+                    documentoValidation.Message ?? "El documento del receptor no es válido.");
             }
 
             var tipoComprobanteEnum = factura.TipoComprobante!.Value;
