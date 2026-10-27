@@ -1,419 +1,504 @@
-# dcARCA - Facturación Electrónica Argentina
+# ARCA-MCP — Facturación electrónica argentina en .NET + MCP
 
-**dcARCA** es un componente .NET 10 para implementar facturación electrónica Argentina utilizando el web service **WSFEv1 de AFIP (ARCA)** y consultar el padrón oficial **ws_sr_constancia_inscripcion** (antes ws_sr_padron_a5) para validar CUIT. 
-Esta librería NO ES un producto oficial de ARCA ni del Gobierno Argentino,sino una implementación independiente desarrollada por **Diego Cofré Sistemas**. [www.diegocofre.com.ar](http://www.diegocofre.com.ar)
+**ARCA-MCP** es un proyecto open source en **.NET 10** para integrar aplicaciones y agentes con los servicios de facturación electrónica de **ARCA (ex AFIP)**.
 
-## Licencia
-Este proyecto está licenciado bajo **Apache License 2.0**.  
-Copyright (c) 2025 Diego Cofré Sistemas www.diegocofre.com.ar
+El repositorio nació como **dcARCA**. La solución evolucionó desde una librería embebible y una aplicación de prueba hasta incorporar un **servidor MCP autenticado**, una **CLI multiplataforma**, hardening de seguridad, tests y mecanismos específicos para operar WSFE de forma más segura. Los proyectos, namespaces y tipos internos conservan el prefijo **dcArca** por continuidad y compatibilidad.
 
-## MCP Server
+Actualmente integra:
 
-Para instalar, configurar y consumir `dcArca.McpServer` con OAuth/OIDC, scopes, numeración segura, reconciliación y ejemplos de homologación, ver **[Documentación completa del MCP](docs/MCP_SERVER.md)**.
+- **WSAA** para autenticación con certificado digital.
+- **WSFEv1** para emisión y consulta de comprobantes.
+- **ws_sr_constancia_inscripcion** para consulta de padrón.
+- **Model Context Protocol (MCP)** sobre HTTP con OAuth/OIDC y JWT Bearer.
 
-## � Quick Start (5 minutos)
+> ARCA-MCP **no es un producto oficial de ARCA ni del Gobierno Argentino**. Es una implementación independiente desarrollada por Diego Cofré Sistemas.
 
-### 1. Requisitos previos
-- .NET 10 SDK ([Descargar](https://dotnet.microsoft.com/download/dotnet/10.0))
-- Certificado digital ARCA (.pfx)
+## Estado actual
 
-### 2. Clonar y compilar
-```powershell
-cd c:\ruta\a\tu\proyecto
-dotnet build
-```
+La arquitectura actual está compuesta por varias superficies con responsabilidades distintas:
 
-### 3. Configurar
-Copia `appsettings.example.json` a `appsettings.json` y edita:
-```json
+| Proyecto | Función |
+| --- | --- |
+| **dcArca.Core** | Librería embebible con WSAA, WSFEv1, padrón, validaciones y modelo fiscal. |
+| **dcArca.McpServer** | Servidor MCP HTTP autenticado. Es la superficie remota soportada por el proyecto público. |
+| **dcArca.Cli** | Utilidad de consola local para administración, pruebas e integraciones sin servidor HTTP. |
+| **dcArca.TestApp** | Aplicación WinForms de referencia y diagnóstico para Windows. |
+| **dcArca.Core.Tests** | Tests del Core, validaciones fiscales, cache WSAA y reconciliación. |
+| **dcArca.McpServer.Tests** | Tests de autenticación, scopes, health y secuenciación MCP. |
+
+La antigua API REST remota no autenticada fue retirada. Para acceso remoto debe utilizarse **dcArca.McpServer**; para automatización local puede utilizarse **dcArca.Cli** o integrar directamente **dcArca.Core**.
+
+## Capacidades principales
+
+- Emisión de Facturas, Notas de Crédito y Notas de Débito A, B, C y M mediante WSFEv1.
+- Conceptos de Productos, Servicios y Productos + Servicios.
+- Consulta de último comprobante autorizado con FECompUltimoAutorizado.
+- Consulta completa de comprobantes existentes con FECompConsultar.
+- Consulta de condiciones de IVA del receptor.
+- Consulta de padrón por CUIT.
+- Modelo fiscal explícito con:
+  - una o múltiples alícuotas de IVA;
+  - importes exentos y no gravados;
+  - tributos y percepciones;
+  - moneda y cotización;
+  - fechas de servicio;
+  - comprobante o período asociado para notas.
+- Validación diferenciada de CUIT, DNI y otros tipos de documento.
+- Reconciliación de emisiones con resultado incierto.
+- Cache WSAA desacoplado mediante IWsaaTokenStore.
+- Health checks para ejecución en contenedores.
+- Dockerfile y docker-compose genéricos, sin infraestructura privada ni secretos.
+
+## Arquitectura MCP
+
+~~~text
+Cliente MCP
+    |
+    | obtiene JWT
+    v
+Authorization Server externo
+    |
+    | Bearer token
+    v
+dcArca.McpServer
+    |
+    +--> dcArca.Core
+            |
+            +--> WSAA
+            +--> WSFEv1
+            +--> Padrón ARCA
+~~~
+
+**dcArca.McpServer es un resource server**: valida tokens emitidos por un Authorization Server externo. No genera usuarios, client secrets ni tokens propios.
+
+Los scopes son independientes:
+
+- **arca:consultar**: operaciones de lectura.
+- **arca:facturar**: operaciones de emisión.
+
+Un cliente que necesite ambas capacidades debe solicitar ambos scopes.
+
+La documentación completa está en [docs/MCP_SERVER.md](docs/MCP_SERVER.md).
+
+## Quick Start — servidor MCP
+
+### Requisitos
+
+- .NET 10 SDK.
+- Certificado ARCA válido para el ambiente elegido.
+- Servicio wsfe autorizado para el certificado.
+- Servicio ws_sr_constancia_inscripcion autorizado si se utilizará padrón.
+- Punto de venta habilitado para WSFE.
+- Authorization Server compatible con OIDC/JWT.
+
+### 1. Clonar
+
+~~~bash
+git clone https://github.com/diegocofre/ARCA-MCP.git
+cd ARCA-MCP
+~~~
+
+### 2. Configurar
+
+Partí del archivo de ejemplo:
+
+~~~bash
+cp dcArca.McpServer/appsettings.example.json dcArca.McpServer/appsettings.json
+~~~
+
+Configuración mínima:
+
+~~~json
 {
   "dcArcaConfig": {
     "Cuit": "TU_CUIT",
-    "CertificatePath": "C:\\Ruta\\Certificado.pfx",
-    "CertificatePassword": "TU_PASSWORD" /* Puede dejarse vacío si el .pfx no tiene contraseña */,
+    "CertificatePath": "/ruta/certificado.pfx",
+    "CertificatePassword": "DESDE_SECRET_MANAGER",
     "WsaaUrl": "https://wsaahomo.afip.gov.ar/ws/services/LoginCms",
     "WsfeUrl": "https://wswhomo.afip.gov.ar/wsfev1/service.asmx",
     "PadronUrl": "https://awshomo.afip.gov.ar/sr-padron/webservices/personaServiceA5",
     "PuntoVenta": 1
+  },
+  "Jwt": {
+    "Authority": "https://idp.example.com/",
+    "Audience": "dcarca-mcp"
   }
 }
-```
+~~~
 
-### 4. Ejecutar
-```powershell
-dotnet run --project dcArca.TestApp\dcArca.TestApp.csproj
-```
+También pueden utilizarse variables de entorno con doble guion bajo, por ejemplo:
 
-### 5. Probar
-- Selecciona "Facturación Electrónica" en el menú
-- Ingresa CUIT receptor: `20123456789`
-- Importe neto: `1000.00`
-- Clic "Calcular IVA y Total" → "Autorizar Factura"
-- Abre "Consultar Comprobante" y verificá cualquier CAE autorizado con `FECompConsultar` (nuevo en esta versión)
+~~~bash
+Jwt__Authority=https://idp.example.com/
+Jwt__Audience=dcarca-mcp
+dcArcaConfig__Cuit=...
+dcArcaConfig__CertificatePath=/certs/certificado.pfx
+dcArcaConfig__CertificatePassword=...
+dcArcaConfig__WsaaUrl=...
+dcArcaConfig__WsfeUrl=...
+dcArcaConfig__PadronUrl=...
+dcArcaConfig__PuntoVenta=1
+~~~
 
-## 🆕 Novedades de esta versión
-- Nuevo formulario **Consultar Comprobante (FECompConsultar)** dentro de la app WinForms para leer cualquier comprobante autorizado y mostrar todo el payload que devuelve AFIP (CAE, importes, tributos, fechas, IVA detallado, observaciones y eventos).
-- Traducción automática de los códigos AFIP más comunes (concepto, tipo de comprobante, tipo de documento, condición IVA y alícuotas) mediante `dcAfipEnumExtensions`, disponible tanto para la UI como para logs/servicios.
-- El modelo `dcFacturaResponse` ahora expone propiedades enriquecidas (moneda, cotización, períodos de servicio/vencimiento, IVA desglosado y condición IVA del receptor) que podés reutilizar en tus propios flujos.
+### 3. Compilar y ejecutar
 
-## 📦 Instalación
+~~~bash
+dotnet restore dcArca.McpServer/dcArca.McpServer.csproj
+dotnet build dcArca.McpServer/dcArca.McpServer.csproj -c Release
+dotnet run --project dcArca.McpServer/dcArca.McpServer.csproj
+~~~
 
-### Requisitos del Sistema
-- **.NET 10 SDK** o superior
-- **Windows 10/11** (para WinForms)
-- **Certificado digital ARCA** válido
+El endpoint MCP se publica en la raíz HTTP del servidor.
 
-### Compilación
-```powershell
-# Clonar repositorio
-git clone https://github.com/tu-repo/dcArca.git
-cd dcArca
+Health checks:
 
-# Compilar
-dotnet build
+- **GET /health/live**
+- **GET /health/ready**
 
-# Ejecutar aplicación de prueba
-dotnet run --project dcArca.TestApp
-```
+Ambos son livianos y no llaman a ARCA.
 
-## 🔐 Configuración del Certificado ARCA - Homologación
+### Desarrollo local con Keycloak
 
-Esta sección describe el proceso para obtener un certificado digital en el ambiente de **Testing/Homologación** de ARCA. Para producción, el procedimiento es diferente (ver documentación oficial de AFIP).
+El repositorio incluye un entorno Keycloak de desarrollo en **deploy/local-keycloak/** para probar OAuth/OIDC sin depender de infraestructura privada.
 
-### Requisitos previos
-- OpenSSL instalado ([Descargar](https://slproweb.com/products/Win32OpenSSL.html) para Windows o usar `choco install openssl`)
-- Acceso al portal WSASS con Clave Fiscal
-- CUIT activo en ARCA
+~~~bash
+cd deploy/local-keycloak
+docker compose up -d
+~~~
 
-### Paso 1: Generar clave privada y CSR
+Ver [docs/MCP_SERVER.md](docs/MCP_SERVER.md) para el flujo completo de obtención del token y llamada a tools/list.
 
-```powershell
-# Generar clave privada (2048 bits)
-openssl genrsa -out certificado.key 2048
+## Tools MCP
 
-# Crear CSR (Certificate Signing Request)
-# IMPORTANTE: Reemplazá TU_CUIT por tu CUIT sin guiones
-openssl req -new -key certificado.key -out certificado.csr -subj "/C=AR/O=Sistema/OU=Servicios/CN=TU_CUIT"
-```
+### Scope arca:consultar
 
-**Nota**: El CUIT debe ir en el campo `CN` (Common Name) del certificado.
+- **consultar_ultimo_comprobante**
+- **consultar_comprobante**
+- **consultar_condiciones_iva**
+- **consultar_padron**
 
-### Paso 2: Crear certificado en WSASS (Homologación)
+### Scope arca:facturar
 
-1. Ingresa a **[https://auth.afip.gob.ar/](https://auth.afip.gob.ar/)** con tu CUIT y Clave Fiscal
-2. Andá a la sección **"WSASS Autoservicio de Acceso a WebServices (TESTING/HOMOLOGACIÓN)"**
-3. En el menú lateral, hace clic en **"Nuevo Certificado"**
-4. Completa el formulario:
-   - **Nombre simbólico del DN** (alias): elegí un nombre identificable, ej: `arcahomo01`
-   - **CUIT del contribuyente**: tu CUIT (se completa automáticamente)
-   - **Solicitud de certificado en formato PKCS#10**: abrí `certificado.csr` con un editor de texto, copiá **todo el contenido** (incluyendo `-----BEGIN CERTIFICATE REQUEST-----` y `-----END CERTIFICATE REQUEST-----`) y pegalo en el campo
-5. Hace clic en **"Crear DN y obtener certificado"**
+- **emitir_comprobante** — flujo recomendado para casos simples.
+- **emitir_comprobante_avanzado** — modelo fiscal completo.
+- **solicitar_cae** — operación de bajo nivel con numeración elegida por el caller.
 
-### Paso 3: Obtener el certificado firmado
+### Numeración segura
 
+Los tools **emitir_comprobante** y **emitir_comprobante_avanzado** no requieren que el cliente calcule el próximo número.
 
-1. Copiá **todo el contenido** del certificado que aparece en pantalla, incluyendo:
-```
------BEGIN CERTIFICATE-----
-MIIDbTC...
------END CERTIFICATE-----
-```
+El servidor serializa la secuencia por:
 
-2. Guardalo en un archivo de texto llamado `certificado.crt`
+~~~text
+(CUIT emisor, punto de venta, tipo de comprobante)
+~~~
 
-### Paso 4: Convertir a formato .pfx
+Dentro del lock:
 
-```powershell
-# Con contraseña (recomendado para producción)
-openssl pkcs12 -export -out certificado.pfx -inkey certificado.key -in certificado.crt -password pass:TU_PASSWORD
+1. consulta el último autorizado;
+2. calcula el siguiente;
+3. emite;
+4. libera el lock incluso ante excepción.
 
-# Sin contraseña (útil para testing, menos seguro)
-openssl pkcs12 -export -nodes -out certificado.pfx -inkey certificado.key -in certificado.crt
-```
+El lock es **in-process**. Si varias réplicas o sistemas externos comparten un mismo punto de venta, debe utilizarse coordinación distribuida o un punto de venta dedicado.
 
-**Importante**: Guardá `certificado.pfx` en un lugar seguro y **nunca lo subas al repositorio**.
+Más detalle: [docs/MCP_NUMBERING.md](docs/MCP_NUMBERING.md).
 
-### Paso 5: Autorizar servicios para el certificado
+## Reconciliación de emisiones inciertas
 
-1. En WSASS, andá a **"Servicios"** en el menú lateral
-2. Buscá y hace clic en el servicio que necesitás (ej: `wsfe` para facturación, `ws_sr_constancia_inscripcion` para padrón)
-3. En la pantalla de información del servicio, hace clic en **"Crear autorización para acceder a este servicio"**
-4. Seleccioná:
-   - **Nombre simbólico del DN a autorizar**: elegí el alias que creaste antes (ej: `arcahomo01`)
-   - **CUIT del DN a autorizar**: tu CUIT
-   - **CUIT representado**: tu CUIT
-   - **Servicio**: el servicio correspondiente
-5. Hace clic en **"Crear autorización de acceso"**
+Un timeout o corte de transporte después de enviar FECAESolicitar no garantiza que ARCA haya descartado la operación.
 
-**Servicios necesarios para dcARCA**:
-- `wsfe` (Facturación Electrónica - obligatorio)
-- `ws_sr_constancia_inscripcion` (Consulta de Padrón - opcional, pero recomendado)
+ARCA-MCP intenta reconciliar el mismo comprobante mediante FECompConsultar antes de decidir el resultado. El modelo puede informar:
 
+- **Authorized**
+- **FiscalRejected**
+- **RecoveredSuccess**
+- **Uncertain**
 
-### Paso 6: Verificar autorizaciones
+No se realiza un segundo FECAESolicitar automático cuando el estado fiscal no puede confirmarse.
 
-1. En el menú lateral, andá a **"Autorizaciones"**
-2. Verificá que aparezcan las autorizaciones creadas para tu alias
-3. Si todo está OK, el certificado ya está listo para usar
+Más detalle: [docs/WSFE_RECONCILIATION.md](docs/WSFE_RECONCILIATION.md).
 
-### Resumen de archivos generados
+## Uso directo de dcArca.Core
 
-- `certificado.key` → Clave privada (mantener segura, nunca compartir)
-- `certificado.csr` → Solicitud de certificado (solo se usa una vez)
-- `certificado.crt` → Certificado público firmado por ARCA
-- `certificado.pfx` → Certificado + clave privada en formato Windows/NET (el que usás en `appsettings.json`)
+El Core puede integrarse sin MCP dentro de cualquier aplicación .NET 10.
 
-## ⚙️ Configuración
-
-Edita `appsettings.json`:
-
-```json
-{
-  "dcArcaConfig": {
-    "Cuit": "20123456789",
-    "CertificatePath": "C:\\Certificados\\certificado.pfx",
-    "CertificatePassword": "password123",
-    "WsaaUrl": "https://wsaahomo.afip.gov.ar/ws/services/LoginCms",
-    "WsfeUrl": "https://wswhomo.afip.gov.ar/wsfev1/service.asmx",
-    "PadronUrl": "https://awshomo.afip.gov.ar/sr-padron/webservices/personaServiceA5",
-    "PuntoVenta": 1
-  }
-}
-```
-
-## 🔐 Gestión del Certificado en Producción
-
-El proceso de producción difiere del ambiente de homologación. En lugar de WSASS, debés utilizar el **Administrador de Certificados Digitales** de ARCA/AFIP.
-
-### Paso 1: Generar CSR (igual que homologación)
-
-```powershell
-# Generar clave privada
-openssl genrsa -out certificado_prod.key 2048
-
-# Crear CSR con tu CUIT en el campo CN
-openssl req -new -key certificado_prod.key -out certificado_prod.csr -subj "/C=AR/O=Sistema/OU=Servicios/CN=TU_CUIT"
-```
-
-### Paso 2: Solicitar certificado en producción
-
-1. Ingresa al **Administrador de Certificados Digitales** desde [https://www.arca.gob.ar](https://www.arca.gob.ar) con tu CUIT y Clave Fiscal
-2. Subí el archivo `certificado_prod.csr` en el formulario de solicitud
-3. El sistema generará y **mostrará el certificado X.509 en pantalla** (no hay descarga automática)
-4. Copiá todo el contenido, incluyendo:
-```
------BEGIN CERTIFICATE-----
-...
------END CERTIFICATE-----
-```
-5. Guardalo como `certificado_prod.crt`
-
-### Paso 3: Convertir a .pfx
-
-```powershell
-# Con contraseña (recomendado)
-openssl pkcs12 -export -out certificado_prod.pfx -inkey certificado_prod.key -in certificado_prod.crt -password pass:TU_PASSWORD_SEGURO
-```
-
-### Paso 4: Autorizar servicios en producción
-
-**Importante**: En producción NO se usa WSASS. Debés utilizar el **Administrador de Relaciones de Clave Fiscal**.
-
-1. Ingresa al **Administrador de Relaciones de Clave Fiscal** desde [https://www.arca.gob.ar](https://www.arca.gob.ar) con tu CUIT
-2. Creá una **nueva relación** para autorizar servicios web
-3. Selecciona y habilita los servicios necesarios:
-   - `wsfe` (Factura Electrónica)
-   - `ws_sr_constancia_inscripcion` (Consulta de Padrón / Constancia de Inscripción)
-   - **Nota**: Si no lo encontrás, buscá por `ws_sr_padron_a5` (nombre antiguo)
-4. Confirmá la autorización del certificado para cada servicio
-
-**Nota**: Asegurate de asociar correctamente el alias/computador fiscal a los servicios habilitados para evitar errores de "certificado no autorizado".
-
-### Paso 5: Actualizar configuración
-
-Modificá `appsettings.json` con las URLs de producción y la ruta al nuevo certificado:
-
-```json
-{
-  "dcArcaConfig": {
-    "Cuit": "TU_CUIT",
-    "CertificatePath": "C:\\Certificados\\certificado_prod.pfx",
-    "CertificatePassword": "TU_PASSWORD_SEGURO",
-    "WsaaUrl": "https://wsaa.afip.gov.ar/ws/services/LoginCms",
-    "WsfeUrl": "https://servicios1.afip.gov.ar/wsfev1/service.asmx",
-    "PadronUrl": "https://aws.afip.gov.ar/sr-padron/webservices/personaServiceA5",
-    "PuntoVenta": TU_PUNTO_VENTA_PRODUCTIVO
-  }
-}
-```
-
-**⚠️ Recordatorios importantes**:
-- **No mezcles certificados**: el certificado de testing NO funciona con endpoints de producción
-- Cada ambiente (homologación/producción) usa su propio certificado y autorización
-- Los endpoints de WSAA y servicios de negocio (Factura, Padrón) son diferentes según el ambiente
-
-**URLs de Producción**:
-- WSAA: `https://wsaa.afip.gov.ar/ws/services/LoginCms`
-- WSFEv1: `https://servicios1.afip.gov.ar/wsfev1/service.asmx`
-- Padrón: `https://aws.afip.gov.ar/sr-padron/webservices/personaServiceA5`
-
-## 🧪 Ejemplos de Uso
-
-### Factura Básica
-```csharp
+~~~csharp
+using dcArca.Core;
 using dcArca.Core.Models;
 using dcArca.Core.Services;
 
 var config = dcConfigurationHelper.LoadFromJson("appsettings.json");
-var client = new dcWsfeClient(config);
+using var client = new dcWsfeClient(config);
 
 var factura = new dcFacturaRequest
 {
-    CuitReceptor = 20123456789,
-    TipoDocReceptor = 80,
-    Concepto = dcConcepto.Productos,
-    TipoComprobante = dcTipoComprobante.FacturaB,
+    TipoComprobante = dcTipoComprobante.FacturaA,
     NumeroComprobante = 1,
+    Concepto = dcConcepto.Productos,
+    CuitReceptor = 20123456786,
+    TipoDocReceptor = (int)dcTipoDocumento.CUIT,
+    CondicionIvaReceptor = dcCondicionIvaReceptor.ResponsableInscripto,
     ImporteNeto = 1000.00m,
     ImporteIva = 210.00m,
     ImporteTotal = 1210.00m,
-    FechaComprobante = "20251119"
+    AlicuotaIva = dcAlicuotaIva.Veintiuno,
+    FechaComprobante = DateTime.Today.ToString("yyyyMMdd")
 };
 
 var resultado = await client.FECAESolicitarAsync(factura);
+
 if (resultado.Success)
 {
     Console.WriteLine($"CAE: {resultado.Cae}");
 }
-```
+else
+{
+    Console.WriteLine($"{resultado.Codigo}: {resultado.Mensaje}");
+}
+~~~
 
-### Nota de Crédito/Débito
-Para notas de crédito o débito, debes especificar el comprobante asociado (CbteAsociado*) para cumplir con la regla 10197 de ARCA:
-```csharp
+En integración directa con **dcArca.Core**, el caller es responsable de coordinar correctamente la numeración. Para consumidores remotos generales se recomienda utilizar los tools de emisión server-side de **dcArca.McpServer**.
+
+### API principal de Core
+
+**dcWsfeClient**
+
+- FECAESolicitarAsync(dcFacturaRequest): solicita CAE.
+- FECompUltimoAutorizadoAsync(dcTipoComprobante): consulta el último número autorizado.
+- FECompConsultarAsync(long numeroComprobante, dcTipoComprobante tipo): recupera un comprobante existente.
+- GetCondicionesIVAReceptorAsync(int docTipo, long docNro, dcTipoComprobante tipo): consulta condiciones de IVA válidas para el receptor.
+
+**dcPadronClient**
+
+- GetPersonaAsync(long cuit): consulta datos registrales del padrón.
+
+El modelo dcFacturaResponse expone CAE, importes, fechas, moneda/cotización, IVA detallado, tributos, observaciones, errores y EmissionOutcome.
+
+### Múltiples alícuotas y modelo fiscal avanzado
+
+Cuando se utiliza detalle de IVA explícito, debe dejarse AlicuotaIva en null y completar la colección Iva.
+
+El request también admite:
+
+- ImporteNoGravado
+- ImporteExento
+- Tributos
+- MonedaId
+- MonedaCotizacion
+
+Si ImporteIva es mayor que cero, la alícuota o el detalle de IVA deben informarse explícitamente. ARCA-MCP **no infiere automáticamente un 21%**.
+
+## Notas de Crédito y Débito
+
+Las notas pueden asociarse a un comprobante original:
+
+~~~csharp
 var nota = new dcFacturaRequest
 {
-    // ... campos básicos ...
-    TipoComprobante = dcTipoComprobante.NotaCreditoB, // 8
-    // Comprobante asociado (factura original)
-    CbteAsociadoTipo = 6, // Tipo de la factura base (FacturaB)
-    CbteAsociadoPtoVta = 1, // Punto de venta de la factura base
-    CbteAsociadoNro = 123, // Número de la factura base
-    // Opcional: CbteAsociadoFecha = "20251119"
-};
-```
+    TipoComprobante = dcTipoComprobante.NotaCreditoB,
 
-### Factura de Servicios
-```csharp
+    CbteAsociadoTipo = (int)dcTipoComprobante.FacturaB,
+    CbteAsociadoPtoVta = 1,
+    CbteAsociadoNro = 123
+
+    // ... resto de los campos fiscales ...
+};
+~~~
+
+También puede utilizarse un período asociado mediante PeriodoAsocDesde y PeriodoAsocHasta cuando corresponda.
+
+## Facturas de servicios
+
+Para concepto Servicios o ProductosYServicios deben informarse las fechas fiscales correspondientes:
+
+~~~csharp
 var factura = new dcFacturaRequest
 {
-    // ... campos básicos ...
     Concepto = dcConcepto.Servicios,
-    FechaServicioDesde = "20251101",
-    FechaServicioHasta = "20251130",
-    FechaVencimiento = "20251215"
-};
-```
+    FechaServicioDesde = "20261001",
+    FechaServicioHasta = "20261031",
+    FechaVencimiento = "20261110"
 
-### Validar CUIT
-```csharp
-var padron = new dcPadronClient(config);
-var persona = await padron.GetPersonaAsync(20123456789);
+    // ... resto de los campos fiscales ...
+};
+~~~
+
+## Consulta de padrón
+
+~~~csharp
+var config = dcConfigurationHelper.LoadFromJson("appsettings.json");
+using var padron = new dcPadronClient(config);
+
+var persona = await padron.GetPersonaAsync(20123456786);
+
 if (persona.Success && persona.Existe)
 {
-    Console.WriteLine($"Estado: {persona.EstadoClave}");
+    Console.WriteLine(persona.EstadoClave);
 }
-```
+~~~
 
-### Manejo de Errores
-```csharp
-var resultado = await client.FECAESolicitarAsync(factura);
-if (!resultado.Success)
-{
-    Console.WriteLine($"Error: {resultado.Mensaje}");
-    foreach (var err in resultado.Errores) Console.WriteLine($"- {err}");
-}
-```
+## CLI local
 
-## 📚 API Reference
+**dcArca.Cli** funciona en Linux, Windows y macOS y no abre sockets ni expone endpoints HTTP.
 
-### Consultar comprobante (FECompConsultar)
-
-La WinForms Test App incluye un formulario dedicado para consultar cualquier comprobante emitido desde tu CUIT:
-
-1. Ejecuta `dcArca.TestApp` y abre **"Consultar Comprobante"** desde el menú principal.
-2. Elegí el tipo de comprobante desde la lista (los textos son generados automáticamente con las nuevas extensiones de enums).
-3. Ingresá el número a consultar y presioná **Consultar**. La pantalla formatea los datos clave y muestra el detalle completo (incluye IVA por alícuota, fechas de servicio, moneda, observaciones y errores).
-4. Toda la información proviene del nuevo método `FECompConsultarAsync`, por lo que es la misma estructura que podés consumir en tus propias apps.
-
-### dcWsfeClient
-- `FECAESolicitarAsync(dcFacturaRequest)`: Solicita CAE
-- `FECompUltimoAutorizadoAsync(dcTipoComprobante)`: Último número
-- `FECompConsultarAsync(long numeroComprobante, dcTipoComprobante tipo)`: Recupera un comprobante existente y devuelve un `dcFacturaResponse` enriquecido.
-- `GetCondicionesIVAReceptorAsync(int docTipo, long docNro, dcTipoComprobante tipo)`: Wrapper para `FEParamGetCondicionIvaReceptor` (útil para validar RG 5616).
-
-### dcPadronClient
-- `GetPersonaAsync(long cuit)`: Consulta padrón A5
-
-### dcFacturaRequest
-- Propiedades: CuitReceptor, ImporteNeto, ImporteIva, etc.
-- Para notas: CbteAsociadoTipo, CbteAsociadoPtoVta, CbteAsociadoNro (obligatorios)
-- `ValidarCuit()`: Valida formato CUIT
-- `EsNota()`: Indica si es nota de crédito/débito
-- `CumpleReglaNotas10197()`: Valida que notas tengan comprobante asociado
-
-## 🖥️ CLI local (Linux/Windows/macOS)
-
-`dcArca.Cli` conserva las operaciones de consola para administración y pruebas locales. No abre puertos ni expone una API HTTP.
-
-```bash
+~~~bash
 cp dcArca.Cli/appsettings.example.json dcArca.Cli/appsettings.json
-dotnet run --project dcArca.Cli -- padron 20123456789
+
+dotnet run --project dcArca.Cli -- padron 20123456786
 dotnet run --project dcArca.Cli -- ultimo-autorizado 6
 dotnet run --project dcArca.Cli -- consultar 123 6
 dotnet run --project dcArca.Cli -- facturar factura.json
-```
+~~~
 
-Comandos disponibles: `facturar [archivo.json]`, `ultimo-autorizado <tipoComprobante>`, `consultar <numero> <tipoComprobante>`, `padron <cuit>` y `condiciones-iva <docTipo> <docNro> <tipoComprobante>`.
+Comandos disponibles:
 
-Para acceso remoto autenticado use `dcArca.McpServer`. El proyecto público no incluye una API REST de facturación sin autenticación.
+- facturar [archivo.json]
+- ultimo-autorizado <tipoComprobante>
+- consultar <numero> <tipoComprobante>
+- padron <cuit>
+- condiciones-iva <docTipo> <docNro> <tipoComprobante>
 
-## 🐛 Troubleshooting
+## Aplicación WinForms de prueba
+
+**dcArca.TestApp** sigue disponible como herramienta de referencia y diagnóstico en Windows.
+
+Incluye, entre otras funciones:
+
+- emisión de comprobantes;
+- consulta de comprobantes mediante FECompConsultar;
+- consulta de CUIT/padrón;
+- visualización de códigos AFIP con descripciones amigables.
+
+~~~bash
+dotnet run --project dcArca.TestApp/dcArca.TestApp.csproj
+~~~
+
+La TestApp ya no representa la arquitectura principal del repositorio: para integración reusable utilizar **dcArca.Core**, y para acceso remoto utilizar **dcArca.McpServer**.
+
+## Certificados ARCA
+
+ARCA-MCP trabaja con certificados digitales configurados por el host.
+
+Reglas importantes:
+
+- homologación y producción usan certificados y endpoints diferentes;
+- no mezclar un certificado de homologación con servicios productivos;
+- el certificado debe estar autorizado para cada Web Service utilizado;
+- wsfe es necesario para facturación;
+- ws_sr_constancia_inscripcion es necesario para padrón;
+- el PFX, su password, claves privadas y tokens nunca deben almacenarse en el repositorio.
+
+Para generar un PFX a partir de una clave privada y un certificado ya emitido:
+
+~~~bash
+openssl pkcs12 -export -out certificado.pfx -inkey certificado.key -in certificado.crt
+~~~
+
+Los PFX sin contraseña también son soportados por la librería, pero no se recomiendan para producción. Si se utilizan, deben protegerse mediante permisos de filesystem o un almacén seguro del host.
+
+Los procedimientos del portal de ARCA para emitir y relacionar certificados pueden cambiar. Para altas nuevas conviene seguir la documentación oficial vigente del organismo y conservar en este repositorio solamente la configuración técnica estable que necesita la aplicación.
+
+## Cache WSAA
+
+Por defecto los Ticket de Acceso se almacenan en memoria mediante **MemoryWsaaTokenStore.Shared**.
+
+Si un host necesita persistencia entre procesos del mismo equipo puede optar explícitamente por **FileSystemWsaaTokenStore**.
+
+También puede implementarse **IWsaaTokenStore** para integrar un secret manager, base de datos o mecanismo distribuido.
+
+Los token/sign de WSAA son credenciales sensibles y no deben escribirse en logs ni persistirse de forma insegura.
+
+Más detalle: [docs/WSAA_CACHE.md](docs/WSAA_CACHE.md).
+
+## Docker
+
+El repositorio incluye Dockerfile y un docker-compose deliberadamente genérico.
+
+~~~bash
+docker build -f dcArca.McpServer/Dockerfile -t dcarca-mcpserver .
+~~~
+
+El compose de la raíz monta la configuración y el certificado desde el host. No incluye dominios, TLS, reverse proxy, redes privadas ni secretos productivos.
+
+Ese límite es intencional: la infraestructura privada pertenece al entorno que despliega ARCA-MCP, no al repositorio público.
+
+## Tests y CI
+
+La CI ejecuta sobre Linux:
+
+- build de Core tests;
+- build de MCP tests;
+- build de CLI;
+- auditoría de paquetes vulnerables;
+- tests de Core;
+- tests de MCP;
+- control para impedir que certificados o claves privadas queden versionados.
+
+Ejecución local:
+
+~~~bash
+dotnet test dcArca.Core.Tests/dcArca.Core.Tests.csproj -c Release
+dotnet test dcArca.McpServer.Tests/dcArca.McpServer.Tests.csproj -c Release
+~~~
+
+La solución también contiene la TestApp WinForms, que requiere Windows para su ejecución normal.
+
+## Seguridad
+
+- Nunca commitear PFX, P12, PEM, KEY, passwords, JWT, client secrets ni Ticket de Acceso.
+- Utilizar TLS en producción.
+- Mantener la metadata OIDC sobre HTTPS fuera de Development.
+- Aplicar mínimo privilegio en los scopes.
+- No entregar client secrets a un frontend, un LLM o un usuario final.
+- Preferir la numeración server-side del MCP frente a coordinación manual desde consumidores remotos.
+- Utilizar mecanismos de secretos y permisos del sistema operativo o plataforma de despliegue.
+- El repositorio público no debe contener infraestructura ni credenciales privadas.
+
+Ver [docs/REPOSITORY_SECURITY.md](docs/REPOSITORY_SECURITY.md).
+
+## Troubleshooting
 
 ### Certificado no encontrado
-- Verifica ruta en `appsettings.json` (usa `\\`)
-- Asegura que el archivo .pfx exista
 
-### Token inválido
-- Autoriza el certificado para `wsfe` en ARCA
-- Para padrón: autoriza para `ws_sr_constancia_inscripcion` (o `ws_sr_padron_a5` si aparece con el nombre antiguo en tu panel)
+- Verificá CertificatePath.
+- Confirmá que el archivo PFX esté montado o disponible para el proceso.
+- En contenedores, revisá que la ruta interna coincida con la configuración.
 
-### CUIT no autorizado
-- Verifica que tu CUIT tenga permisos en ARCA
+### Certificado o servicio no autorizado
+
+- Confirmá que el certificado corresponda al ambiente.
+- Verificá la autorización del servicio wsfe.
+- Para padrón, verificá ws_sr_constancia_inscripcion.
 
 ### Punto de venta no habilitado
-- Configura el punto de venta en ARCA
 
-### Errores comunes ARCA
-- 10016: CUIT inválido
-- 10048: Comprobante duplicado
-- 10197: Notas de crédito/débito requieren comprobante asociado (CbteAsoc)
-- 1217: Certificado no autorizado
+- Confirmá que PuntoVenta exista y esté habilitado para el servicio de facturación electrónica utilizado.
 
-## 🔒 Seguridad
+### IVA informado sin alícuota
 
-- Nunca subas .pfx al repositorio
-- Agrega `appsettings.json` a `.gitignore`
-- Usa variables de entorno o Key Vault en producción
-- Rota certificados antes del vencimiento
+Desde la versión 2.0, si ImporteIva es mayor que cero debe informarse AlicuotaIva o el detalle Iva. Ya no se supone automáticamente una alícuota del 21%.
 
-Nota sobre .pfx sin contraseña:
-- La librería soporta `.pfx` sin contraseña. Si tu archivo `.pfx` no está protegido por password puedes dejar `CertificatePassword` vacío (`""`) o eliminar la clave del `appsettings.json`. 
-- Advertencia: los `.pfx` sin contraseña son menos seguros; evita su uso en producción y protege el archivo con permisos de sistema o almacén seguro (Key Vault, etc.).
+### Resultado incierto
 
-## 📖 Referencias
+Si una emisión devuelve EmissionOutcome = Uncertain, no repitas automáticamente el mismo FECAESolicitar. Primero debe resolverse el estado fiscal del comprobante.
 
-- [ARCA WSFEv1](https://www.afip.gob.ar/ws/WSFE/documentacion.asp)
-- [Padrón - Constancia de Inscripción](https://www.afip.gob.ar/ws/documentacion/ws-padron-a5.asp) (servicio `ws_sr_constancia_inscripcion`)
-- [WSAA](https://www.afip.gob.ar/ws/WSAA/wsaa.html)
+## Documentación
 
-**diego cofré sistemas** http://www.diegocofre.com.ar - Soluciones en .NET
+- [Servidor MCP](docs/MCP_SERVER.md)
+- [Autorización y scopes](docs/MCP_AUTHORIZATION.md)
+- [Numeración y concurrencia](docs/MCP_NUMBERING.md)
+- [Configuración y health](docs/MCP_CONFIGURATION.md)
+- [Reconciliación WSFE](docs/WSFE_RECONCILIATION.md)
+- [Cache WSAA](docs/WSAA_CACHE.md)
+- [Superficies soportadas](docs/SERVICE_SURFACES.md)
+- [Seguridad del repositorio](docs/REPOSITORY_SECURITY.md)
+- [Changelog](CHANGELOG.md)
+- [Notas de v2.0.0](docs/releases/v2.0.0.md)
+
+## Licencia
+
+Apache License 2.0.
+
+Copyright (c) 2025 Diego Cofré Sistemas  
+https://www.diegocofre.com.ar
