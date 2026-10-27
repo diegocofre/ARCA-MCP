@@ -260,6 +260,21 @@ else
 
 En integración directa con **dcArca.Core**, el caller es responsable de coordinar correctamente la numeración. Para consumidores remotos generales se recomienda utilizar los tools de emisión server-side de **dcArca.McpServer**.
 
+### API principal de Core
+
+**dcWsfeClient**
+
+- FECAESolicitarAsync(dcFacturaRequest): solicita CAE.
+- FECompUltimoAutorizadoAsync(dcTipoComprobante): consulta el último número autorizado.
+- FECompConsultarAsync(long numeroComprobante, dcTipoComprobante tipo): recupera un comprobante existente.
+- GetCondicionesIVAReceptorAsync(int docTipo, long docNro, dcTipoComprobante tipo): consulta condiciones de IVA válidas para el receptor.
+
+**dcPadronClient**
+
+- GetPersonaAsync(long cuit): consulta datos registrales del padrón.
+
+El modelo dcFacturaResponse expone CAE, importes, fechas, moneda/cotización, IVA detallado, tributos, observaciones, errores y EmissionOutcome.
+
 ### Múltiples alícuotas y modelo fiscal avanzado
 
 Cuando se utiliza detalle de IVA explícito, debe dejarse AlicuotaIva en null y completar la colección Iva.
@@ -377,8 +392,10 @@ Reglas importantes:
 Para generar un PFX a partir de una clave privada y un certificado ya emitido:
 
 ~~~bash
-openssl pkcs12 -export   -out certificado.pfx   -inkey certificado.key   -in certificado.crt
+openssl pkcs12 -export -out certificado.pfx -inkey certificado.key -in certificado.crt
 ~~~
+
+Los PFX sin contraseña también son soportados por la librería, pero no se recomiendan para producción. Si se utilizan, deben protegerse mediante permisos de filesystem o un almacén seguro del host.
 
 Los procedimientos del portal de ARCA para emitir y relacionar certificados pueden cambiar. Para altas nuevas conviene seguir la documentación oficial vigente del organismo y conservar en este repositorio solamente la configuración técnica estable que necesita la aplicación.
 
